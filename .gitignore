@@ -1,0 +1,21 @@
+# dependencies - ignore all node_modules anywhere
+**/node_modules/
+
+# production build - ignore all build folders anywhere
+**/build/
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor settings
+.vscode/
+.idea/
+*.swp
