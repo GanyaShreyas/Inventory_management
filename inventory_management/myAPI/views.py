@@ -1,15 +1,37 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 from pymongo import MongoClient
 import traceback
 from datetime import datetime
+from zoneinfo import ZoneInfo
+import secrets
+import hashlib
+import csv
+from io import StringIO
+
 
 # Set up MongoDB connection (adjust URI as needed)
 client = MongoClient("mongodb://inventory_admin:BEL%402479@localhost:27017/")
 db = client["inventory_db"]  # Use your DB name
 collection = db["product_details"]
 log_collection = db["api_logs"]
+users_collection = db["users"]
+sessions_collection = db["sessions"]
+
+# Bootstrap a default admin user if none exists
+try:
+    if users_collection.count_documents({}) == 0:
+        users_collection.insert_one({
+            "name": "Administrator",
+            "username": "admin",
+            "password_hash": hashlib.sha256(("bel_simple_salt" + "admin123").encode("utf-8")).hexdigest(),
+            "role": "admin",
+            "created_at": datetime.now(ZoneInfo("Asia/Kolkata"))
+        })
+except Exception:
+    # If Mongo isn't reachable at import time, ignore; runtime endpoints will fail gracefully
+    pass
 
 # Logging function to store logs in MongoDB
 def log_api_response(endpoint, method, request_data, response_data):
@@ -23,179 +45,528 @@ def log_api_response(endpoint, method, request_data, response_data):
     log_collection.insert_one(log_entry)
 
 
-def fetch_items(request):
-    if request.method == "GET":
-        try:
-            product_id = request.GET.get("product_id")
-            query = {"product_id": product_id} if product_id else {}
-            items = list(collection.find(query, {"_id": 0}))
-            log_api_response(
-                endpoint="fetch_items",
-                method=request.method,
-                request_data={"product_id": product_id},
-                response_data=items
-            )
-            return JsonResponse(items, safe=False)
-        except Exception as e:
-            stack_trace = traceback.format_exc()
-            error_response = {"error": str(e)}
-            log_api_response(
-                endpoint="fetch_items",
-                method=request.method,
-                request_data={"product_id": product_id},
-                response_data={**error_response, "stack_trace": stack_trace}
-            )
-            return JsonResponse(error_response, status=500)
-    else:
-        error_response = {"error": "Only GET method Allowed"}
-        log_api_response(
-            endpoint="fetch_items",
-            method=request.method,
-            request_data={},
-            response_data=error_response
-        )
-        return JsonResponse(error_response, status=405)
+# ----------------------
+# Auth helpers
+# ----------------------
+def hash_password(password: str) -> str:
+    salt = "bel_simple_salt"  # replace with env var in prod
+    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
 
+def generate_token() -> str:
+    return secrets.token_hex(32)
+
+
+def get_auth_token_from_request(request):
+    auth_header = request.headers.get("Authorization") or request.META.get("HTTP_AUTHORIZATION")
+    if not auth_header:
+        return None
+    parts = auth_header.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return None
+
+
+def get_user_from_token(request):
+    token = get_auth_token_from_request(request)
+    if not token:
+        return None
+    session = sessions_collection.find_one({"token": token})
+    if not session:
+        return None
+    user = users_collection.find_one({"_id": session.get("user_id")})
+    if not user:
+        return None
+    return {"id": str(user.get("_id")), "username": user.get("username"), "role": user.get("role"), "name": user.get("name")}
+
+
+def require_auth(request, role: str | None = None):
+    user = get_user_from_token(request)
+    if not user:
+        return None, JsonResponse({"error": "Unauthorized"}, status=401)
+    if role and user.get("role") != role:
+        return None, JsonResponse({"error": "Forbidden"}, status=403)
+    return user, None
+
+
+# ----------------------
+# Auth endpoints
+# ----------------------
 @csrf_exempt
-def insert_item(request):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            # Extract all fields from the frontend form
-            product_items = {
-                "name": data.get("name"),
-                "in": data.get("in"),
-                "out": data.get("out"),
-                "field1": data.get("field1"),
-                "field2": data.get("field2"),
-                "field3": data.get("field3"),
-                "field4": data.get("field4"),
-                "field5": data.get("field5"),
-                "field6": data.get("field6"),
-                "field7": data.get("field7"),
-                "field8": data.get("field8") or datetime.utcnow().strftime("%Y-%m-%d"),
-            }
-
-            # Insert into MongoDB
-            result = collection.insert_one(product_items)
-
-            product_items.pop("_id",None) 
-            response = {
-                "message": "Item added successfully",
-                "product": product_items,
-                "mongo_id": str(result.inserted_id)
-            }
-            log_api_response(
-                endpoint="insert_item",
-                method=request.method,
-                request_data=data,
-                response_data=response
-            )
-            return JsonResponse(response)
-
-        except Exception as e:
-            print("Error in insert_item:", e)
-            traceback.print_exc()
-            stack_trace = traceback.format_exc()
-            error_response = {"error": str(e)}
-            log_api_response(
-                endpoint="insert_item",
-                method=request.method,
-                request_data=getattr(request, 'body', None),
-                response_data={**error_response, "stack_trace": stack_trace}
-            )
-            return JsonResponse(error_response, status=500)
-    else:
+def login(request):
+    if request.method != "POST":
         error_response = {"error": "Only POST allowed"}
-        log_api_response(
-            endpoint="insert_item",
-            method=request.method,
-            request_data=getattr(request, 'body', None),
-            response_data=error_response
-        )
+        log_api_response("login", request.method, getattr(request, 'body', None), error_response)
         return JsonResponse(error_response, status=405)
+    try:
+        body = json.loads(request.body or b"{}")
+        username = (body.get("username") or "").strip()
+        password = body.get("password") or ""
+        if not username or not password:
+            response = {"error": "username and password are required"}
+            log_api_response("login", request.method, body, response)
+            return JsonResponse(response, status=400)
+
+        user = users_collection.find_one({"username": username})
+        if not user or user.get("password_hash") != hash_password(password):
+            response = {"error": "Invalid credentials"}
+            log_api_response("login", request.method, {"username": username}, response)
+            return JsonResponse(response, status=401)
+
+        token = generate_token()
+        sessions_collection.insert_one({
+            "token": token,
+            "user_id": user.get("_id"),
+            "role": user.get("role"),
+            "created_at": datetime.now(ZoneInfo("Asia/Kolkata"))
+        })
+
+        response = {"token": token, "role": user.get("role")}
+        log_api_response("login", request.method, {"username": username}, response)
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("login", request.method, getattr(request, 'body', None), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
 
 
 @csrf_exempt
-def update_item(request):
-    if request.method == "PUT":
-        try:
-            data = json.loads(request.body)
-            product_name = data.get("product_name")
-            product_id = data.get("product_id")
+def admin_add_user(request):
+    if request.method != "POST":
+        error_response = {"error": "Only POST allowed"}
+        log_api_response("admin_add_user", request.method, getattr(request, 'body', None), error_response)
+        return JsonResponse(error_response, status=405)
 
-            result = collection.update_one(
-                {"product_id": product_id},
-                {"$set": {"product_name": product_name}}
-            )
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+    try:
+        body = json.loads(request.body or b"{}")
+        name = (body.get("name") or "").strip()
+        username = (body.get("username") or "").strip().lower()
+        password = body.get("password") or ""
+        role = (body.get("role") or "user").strip().lower()
+
+        if not name or not username or not password:
+            response = {"error": "name, username, password are required"}
+            log_api_response("admin_add_user", request.method, body, response)
+            return JsonResponse(response, status=400)
+
+        if role not in ["admin", "user"]:
+            role = "user"
+
+        exists = users_collection.find_one({"username": username})
+        if exists:
+            response = {"error": "username already exists"}
+            log_api_response("admin_add_user", request.method, {"username": username}, response)
+            return JsonResponse(response, status=409)
+
+        doc = {
+            "name": name,
+            "username": username,
+            "password_hash": hash_password(password),
+            "role": role,
+            "created_at": datetime.now(ZoneInfo("Asia/Kolkata"))
+        }
+        users_collection.insert_one(doc)
+        response = {"message": "user created", "username": username, "role": role}
+        log_api_response("admin_add_user", request.method, {"admin": user.get("username"), "new_user": username}, response)
+        return JsonResponse(response, status=201)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("admin_add_user", request.method, getattr(request, 'body', None), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+ 
+
+
+# ----------------------
+# Inventory: Item In / Out / CRUD by passNo
+# ----------------------
+@csrf_exempt
+def items_in(request):
+    if request.method != "POST":
+        error_response = {"error": "Only POST allowed"}
+        log_api_response("items_in", request.method, getattr(request, 'body', None), error_response)
+        return JsonResponse(error_response, status=405)
+    user, err = require_auth(request)
+    if err:
+        return err
+    try:
+        body = json.loads(request.body or b"{}")
+        pass_no = (body.get("passNo") or "").strip()
+        date_in = (body.get("dateIn") or datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat())
+        customer = {
+            "name": body.get("customerName"),
+            "unitAddress": body.get("customerUnitAddress"),
+            "location": body.get("customerLocation"),
+            "phone": body.get("customerPhoneNo"),
+        }
+        project_name = body.get("projectName")
+        items = body.get("items") or []
+
+        if not pass_no:
+            response = {"error": "passNo is required"}
+            log_api_response("items_in", request.method, body, response)
+            return JsonResponse(response, status=400)
+
+        exists = collection.find_one({"passNo": pass_no})
+        if exists:
+            response = {"error": "passNo already exists"}
+            log_api_response("items_in", request.method, {"passNo": pass_no}, response)
+            return JsonResponse(response, status=409)
+
+        normalized_items = []
+        for it in items:
+            normalized_items.append({
+                "equipmentType": it.get("equipmentType"),
+                "itemName": it.get("itemName"),
+                "partNumber": it.get("partNumber"),
+                "serialNumber": it.get("serialNumber"),
+                "defectDetails": it.get("defectDetails"),
+                "itemIn": True,  # Always true when item is entered
+                "itemOut": False,
+                "dateOut": None,  # Will be set when item goes out
+                "itemRectificationDetails": "",  # New field for rectification details
+            })
+        
+        # Sort items by part number in ascending order
+        normalized_items.sort(key=lambda x: x.get("partNumber", ""))
+
+        doc = {
+            "passNo": pass_no,
+            "dateIn": date_in,
+            "customer": customer,
+            "projectName": project_name,
+            "items": normalized_items,
+            "createdBy": user.get("username"),
+            "createdAt": datetime.now(ZoneInfo("Asia/Kolkata")),
+            "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata")),
+        }
+        collection.insert_one(doc)
+        doc.pop("_id", None)
+        response = {"message": "Item In recorded", "data": doc}
+        log_api_response("items_in", request.method, {"passNo": pass_no}, response)
+        return JsonResponse(response, status=201)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("items_in", request.method, getattr(request, 'body', None), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+def get_item_by_passno(request, pass_no):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("get_item_by_passno", request.method, {"passNo": pass_no}, error_response)
+        return JsonResponse(error_response, status=405)
+    user, err = require_auth(request)
+    if err:
+        return err
+    try:
+        doc = collection.find_one({"passNo": pass_no}, {"_id": 0})
+        if not doc:
+            response = {"error": "Not found"}
+            log_api_response("get_item_by_passno", request.method, {"passNo": pass_no}, response)
+            return JsonResponse(response, status=404)
+        log_api_response("get_item_by_passno", request.method, {"passNo": pass_no}, doc)
+        return JsonResponse(doc, safe=False)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("get_item_by_passno", request.method, {"passNo": pass_no}, {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+@csrf_exempt
+def update_item_out(request, pass_no):
+    if request.method != "PUT":
+        error_response = {"error": "Only PUT allowed"}
+        log_api_response("update_item_out", request.method, {"passNo": pass_no}, error_response)
+        return JsonResponse(error_response, status=405)
+    user, err = require_auth(request)
+    if err:
+        return err
+    try:
+        body = json.loads(request.body or b"{}")
+        updates = body.get("items") or []
+
+        doc = collection.find_one({"passNo": pass_no})
+        if not doc:
+            response = {"error": "Not found"}
+            log_api_response("update_item_out", request.method, {"passNo": pass_no}, response)
+            return JsonResponse(response, status=404)
+
+        serial_to_out = {u.get("serialNumber"): bool(u.get("itemOut", False)) for u in updates if u.get("serialNumber")}
+        date_out_updates = {u.get("serialNumber"): u.get("dateOut") for u in updates if u.get("serialNumber")}
+        rectification_updates = {u.get("serialNumber"): u.get("itemRectificationDetails") for u in updates if u.get("serialNumber")}
+        
+        print(f"DEBUG: Received updates: {updates}")
+        print(f"DEBUG: Serial to out mapping: {serial_to_out}")
+        print(f"DEBUG: Date out updates: {date_out_updates}")
+        print(f"DEBUG: Rectification updates: {rectification_updates}")
+        
+        new_items = []
+        for it in doc.get("items", []):
+            serial = it.get("serialNumber")
+            if serial in serial_to_out:
+                it["itemOut"] = serial_to_out[serial]
+                # Set dateOut to current date if item is marked as out and no date is provided
+                if it["itemOut"] and (not it.get("dateOut") or it.get("dateOut") is None):
+                    it["dateOut"] = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+                    print(f"DEBUG: Auto-setting dateOut for serial {serial} to {it['dateOut']}")
+                elif serial in date_out_updates:
+                    # Always update dateOut if provided in the request, even if it's empty string
+                    it["dateOut"] = date_out_updates[serial]
+                    print(f"DEBUG: Setting dateOut for serial {serial} to {date_out_updates[serial]}")
+                # Clear dateOut when itemOut is unchecked
+                elif not it["itemOut"]:
+                    it["dateOut"] = None
+                    print(f"DEBUG: Clearing dateOut for serial {serial} since itemOut is False")
+                # Update rectification details if provided
+                if serial in rectification_updates and rectification_updates[serial] is not None:
+                    it["itemRectificationDetails"] = rectification_updates[serial]
+                    print(f"DEBUG: Setting rectification for serial {serial} to {rectification_updates[serial]}")
+            new_items.append(it)
+
+        collection.update_one({"passNo": pass_no}, {"$set": {"items": new_items, "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata")), "updatedBy": user.get("username")}})
+        response = {"message": "ItemOut statuses updated"}
+        log_api_response("update_item_out", request.method, {"passNo": pass_no, "updates_count": len(updates)}, response)
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("update_item_out", request.method, {"passNo": pass_no}, {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+@csrf_exempt
+def edit_record(request, pass_no):
+    user, err = require_auth(request)
+    if err:
+        return err
+    try:
+        if request.method == "GET":
+            doc = collection.find_one({"passNo": pass_no}, {"_id": 0})
+            if not doc:
+                response = {"error": "Not found"}
+                log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
+                return JsonResponse(response, status=404)
+            log_api_response("edit_record", request.method, {"passNo": pass_no}, doc)
+            return JsonResponse(doc, safe=False)
+        elif request.method == "PUT":
+            body = json.loads(request.body or b"{}")
+            if body.get("passNo") and body.get("passNo") != pass_no:
+                response = {"error": "passNo cannot be changed"}
+                log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
+                return JsonResponse(response, status=400)
+
+            allowed_fields = ["dateIn", "customer", "projectName", "items"]
+            set_fields = {k: v for k, v in body.items() if k in allowed_fields}
+            
+            # Sort items by part number if items are being updated
+            if "items" in set_fields:
+                for item in set_fields["items"]:
+                    item["itemIn"] = True  # Always true when item is entered
+                    if "dateOut" not in item:
+                        item["dateOut"] = None
+                    if "itemRectificationDetails" not in item:
+                        item["itemRectificationDetails"] = ""
+                set_fields["items"].sort(key=lambda x: x.get("partNumber", ""))
+            
+            set_fields["updatedAt"] = datetime.now(ZoneInfo("Asia/Kolkata"))
+            set_fields["updatedBy"] = user.get("username")
+            result = collection.update_one({"passNo": pass_no}, {"$set": set_fields})
             if result.matched_count == 0:
-                response = {"message": f"Item with product_id {product_id} does not exist"}
-            else:
-                response = {"message": "Item updated successfully"}
-            log_api_response(
-                endpoint="update_item",
-                method=request.method,
-                request_data=data,
-                response_data=response
-            )
+                response = {"error": "Not found"}
+                log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
+                return JsonResponse(response, status=404)
+            response = {"message": "Record updated"}
+            log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
             return JsonResponse(response)
-        except Exception as e:
-            stack_trace = traceback.format_exc()
-            error_response = {"error": str(e)}
-            log_api_response(
-                endpoint="update_item",
-                method=request.method,
-                request_data=getattr(request, 'body', None),
-                response_data={**error_response, "stack_trace": stack_trace}
-            )
-            return JsonResponse(error_response, status=500)
-    else:
-        error_response = {"error": "Only PUT method allowed"}
-        log_api_response(
-            endpoint="update_item",
-            method=request.method,
-            request_data=getattr(request, 'body', None),
-            response_data=error_response
-        )
+        elif request.method == "DELETE":
+            result = collection.delete_one({"passNo": pass_no})
+            if result.deleted_count == 0:
+                response = {"error": "Not found"}
+                log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
+                return JsonResponse(response, status=404)
+            response = {"message": "Record deleted"}
+            log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
+            return JsonResponse(response)
+        else:
+            error_response = {"error": "Method not allowed"}
+            log_api_response("edit_record", request.method, {"passNo": pass_no}, error_response)
+            return JsonResponse(error_response, status=405)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("edit_record", request.method, {"passNo": pass_no}, {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+# ----------------------
+# Search + download
+# ----------------------
+def _build_date_filter(from_str: str | None, to_str: str | None):
+    if not from_str and not to_str:
+        return None
+    cond = {}
+    if from_str:
+        cond["$gte"] = from_str
+    if to_str:
+        cond["$lte"] = to_str
+    return cond
+
+
+def _build_search_query(params):
+    search_type = params.get("type")
+    value = params.get("value")
+    from_date = params.get("from")
+    to_date = params.get("to")
+    query = {}
+    if search_type == "PassNo" and value:
+        query["passNo"] = value
+    elif search_type == "ItemPartNo" and value:
+        query["items.partNumber"] = value
+    elif search_type == "ProjectName" and value:
+        query["projectName"] = {"$regex": value, "$options": "i"}
+    elif search_type == "DateRange":
+        pass  # only date filter
+    date_cond = _build_date_filter(from_date, to_date)
+    if date_cond:
+        query["dateIn"] = date_cond
+    return query
+
+def _filter_items_by_part_number(items, part_number):
+    """Filter items to only include those matching the part number search"""
+    if not part_number:
+        return items
+    return [item for item in items if item.get("partNumber") == part_number]
+
+
+def _shape_search_result(doc):
+    return {
+        "passNo": doc.get("passNo"),
+        "projectName": doc.get("projectName"),
+        "dateIn": doc.get("dateIn"),
+        "numItems": len(doc.get("items", [])),
+    }
+
+
+def search(request):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("search", request.method, dict(request.GET), error_response)
         return JsonResponse(error_response, status=405)
+    user, err = require_auth(request)
+    if err:
+        return err
+    try:
+        params = request.GET
+        query = _build_search_query(params)
+        docs = list(collection.find(query))
+        results = [_shape_search_result({**d, "_id": None}) for d in docs]
+        response = {"count": len(results), "data": results}
+        log_api_response("search", request.method, dict(params), {"count": response["count"]})
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("search", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
 
 
 @csrf_exempt
-def delete_item(request):
-    if request.method == "DELETE":
-        try:
-            data = json.loads(request.body)
-            product_id = data.get("product_id")
-
-            result = collection.delete_one({"product_id": product_id})
-            if result.deleted_count == 0:
-                response = {"message": f"Item with product_id {product_id} does not exist"}
-            else:
-                response = {"message": f"Item with product_id {product_id} is deleted successfully"}
-            log_api_response(
-                endpoint="delete_item",
-                method=request.method,
-                request_data=data,
-                response_data=response
-            )
-            return JsonResponse(response)
-        except Exception as e:
-            stack_trace = traceback.format_exc()
-            error_response = {"error": str(e)}
-            log_api_response(
-                endpoint="delete_item",
-                method=request.method,
-                request_data=getattr(request, 'body', None),
-                response_data={**error_response, "stack_trace": stack_trace}
-            )
-            return JsonResponse(error_response, status=500)
-    else:
-        error_response = {"error": "Only DELETE method allowed"}
-        log_api_response(
-            endpoint="delete_item",
-            method=request.method,
-            request_data=getattr(request, 'body', None),
-            response_data=error_response
-        )
+def search_download(request):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("search_download", request.method, dict(request.GET), error_response)
         return JsonResponse(error_response, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        params = request.GET
+        query = _build_search_query(params)
+        docs = list(collection.find(query))
+
+        # Create CSV content
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Write header row
+        writer.writerow([
+            "Pass No", "Date In", "Project Name", 
+            "Customer Name", "Customer Unit Address", "Customer Location", "Customer Phone",
+            "Equipment Type", "Item Name", "Part Number", "Serial Number", "Defect Details", 
+            "Status", "Date Out", "Item Rectification Details"
+        ])
+        
+        # Write data rows - one row per item
+        for doc in docs:
+            pass_no = doc.get("passNo", "")
+            date_in = doc.get("dateIn", "")
+            project_name = doc.get("projectName", "")
+            customer = doc.get("customer", {})
+            items = doc.get("items", [])
+            
+            # Filter items by part number if searching by part number
+            search_type = params.get("type")
+            if search_type == "ItemPartNo" and params.get("value"):
+                items = _filter_items_by_part_number(items, params.get("value"))
+            
+            for item in items:
+                # Determine status: OUT if both itemIn and itemOut are true, else IN
+                status = "OUT" if item.get("itemIn") and item.get("itemOut") else "IN"
+                
+                # Format phone number properly (remove scientific notation)
+                phone = customer.get("phone", "")
+                if phone and str(phone).isdigit():
+                    phone = str(phone)
+                
+                # Format date properly for Excel
+                date_out = item.get("dateOut", "")
+                if date_out:
+                    # Ensure date is in YYYY-MM-DD format
+                    try:
+                        if isinstance(date_out, str):
+                            date_out = date_out[:10]  # Take first 10 characters
+                    except:
+                        date_out = ""
+                
+                writer.writerow([
+                    pass_no,
+                    date_in,
+                    project_name,
+                    customer.get("name", ""),
+                    customer.get("unitAddress", ""),
+                    customer.get("location", ""),
+                    phone,
+                    item.get("equipmentType", ""),
+                    item.get("itemName", ""),
+                    item.get("partNumber", ""),
+                    item.get("serialNumber", ""),
+                    item.get("defectDetails", ""),
+                    status,
+                    date_out,
+                    item.get("itemRectificationDetails", "")
+                ])
+
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Return CSV file
+        response = HttpResponse(csv_content, content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="inventory_export.csv"'
+        
+        log_api_response("search_download", request.method, dict(params), {"rows": len(docs)})
+        return response
+
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("search_download", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)

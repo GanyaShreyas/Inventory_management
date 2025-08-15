@@ -404,3 +404,80 @@
 }
 
 
+/* Premium layout additions */
+.page {
+  padding: 24px;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.pageTitle {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #0f2233;
+}
+
+.pageActions { display: flex; gap: 8px; }
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12);
+  padding: 18px;
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+
+.card:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(15, 110, 177, 0.18); }
+
+.cardTitle { font-weight: 700; font-size: 1.1rem; margin-bottom: 6px; }
+.cardDesc { color: #475569; font-size: .95rem; margin-bottom: 10px; }
+
+.btn { 
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+  padding: 8px 14px; font-weight: 600; font-size: .95rem; transition: all .2s ease;
+}
+.btnPrimary { background: linear-gradient(135deg, #0f6eb1 0%, #2196f3 100%); color: #fff; }
+.btnPrimary:hover { filter: brightness(1.05); box-shadow: 0 6px 18px rgba(15,110,177,.25); }
+.btnGhost { background: #fff; color: #0f6eb1; border-color: #b3d6ef; }
+.btnGhost:hover { background: #eaf6fd; }
+.btnDanger { background: #ef4444; color: #fff; }
+.btnDanger:hover { filter: brightness(1.05); box-shadow: 0 6px 18px rgba(239,68,68,.25); }
+
+.form { display: grid; gap: 14px; }
+.formRow { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.formGrid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.formGrid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+.label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #0f2233; }
+.control {
+  padding: 10px 12px; border: 1px solid #cfe4f3; border-radius: 8px; outline: none; font-size: .98rem;
+  background: #fff; transition: box-shadow .2s ease, border-color .2s ease;
+}
+.control:focus { border-color: #0f6eb1; box-shadow: 0 0 0 3px rgba(15,110,177,.2); }
+.control[disabled] { background: #f1f5f9; color: #888; cursor: not-allowed; }
+
+.tableWrap { background: #fff; border-radius: 12px; box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12); overflow: hidden; }
+.table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+.table thead th { background: #f6f8fa; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
+.table tbody td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; }
+.table tbody tr:hover { background: #fafcff; }
+
+.loginWrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px; background: linear-gradient(120deg, #e6f2fb, #f2f6fb); }
+.loginCard { width: 100%; max-width: 440px; background: #fff; border-radius: 14px; box-shadow: 0 20px 60px rgba(15, 110, 177, 0.2); padding: 24px; }
+.loginTitle { font-size: 1.4rem; font-weight: 800; margin-bottom: 8px; color: #0f2233; }
+.loginSubtitle { color: #475569; margin-bottom: 18px; }
+
+.pill { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: #eaf6fd; color: #0f6eb1; font-weight: 700; font-size: .8rem; }
+

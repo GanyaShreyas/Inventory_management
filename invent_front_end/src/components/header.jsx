@@ -1,9 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import styles from './styles.module.css';
 import userImg from '../assets/person.png';
 
 function Header() {
   const[profileOpen,setProfileOpen] = useState(false);
+  const username = typeof window !== 'undefined' ? (localStorage.getItem('role') === 'admin' ? 'Admin' : (localStorage.getItem('name') || localStorage.getItem('user') || 'User')) : 'User';
+  const onLogout = () => {
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('role');
+      localStorage.removeItem('name');
+      localStorage.removeItem('user');
+    } catch {}
+    window.location.href = '/login';
+  };
   return(
     <div className={styles.profileComp}>
       <div className={styles.headerBanner}>
@@ -12,13 +22,11 @@ function Header() {
       </div>
       <div className={styles.profileContainer}>  
           <img onClick={ () => setProfileOpen((prev) => !prev ) }
-                         className={styles.userImg} src = {userImg} />
+                         className={styles.userImg} src = {userImg} alt="User" />
           <div style={{ display: profileOpen ? 'block' : 'none' }}>
             <div className={styles.profileChild}>
-              UserID: userID
-              <button>
-                Logout
-              </button>
+              <div>User: {username}</div>
+              <button onClick={onLogout}>Logout</button>
             </div>
           </div>
       </div>
