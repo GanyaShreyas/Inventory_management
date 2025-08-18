@@ -33,6 +33,15 @@ except Exception:
     # If Mongo isn't reachable at import time, ignore; runtime endpoints will fail gracefully
     pass
 
+# Clean up expired sessions (older than 24 hours)
+def cleanup_expired_sessions():
+    try:
+        from datetime import timedelta
+        cutoff_time = datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=24)
+        sessions_collection.delete_many({"created_at": {"$lt": cutoff_time}})
+    except Exception:
+        pass  # Ignore cleanup errors
+
 # Logging function to store logs in MongoDB
 def log_api_response(endpoint, method, request_data, response_data):
     log_entry = {
@@ -113,6 +122,9 @@ def login(request):
             log_api_response("login", request.method, {"username": username}, response)
             return JsonResponse(response, status=401)
 
+        # Clean up expired sessions before creating new one
+        cleanup_expired_sessions()
+        
         token = generate_token()
         sessions_collection.insert_one({
             "token": token,
@@ -121,13 +133,72 @@ def login(request):
             "created_at": datetime.now(ZoneInfo("Asia/Kolkata"))
         })
 
-        response = {"token": token, "role": user.get("role")}
+        response = {
+            "token": token, 
+            "role": user.get("role"),
+            "username": user.get("username"),
+            "name": user.get("name")
+        }
         log_api_response("login", request.method, {"username": username}, response)
         return JsonResponse(response)
     except Exception as e:
         stack_trace = traceback.format_exc()
         error_response = {"error": str(e)}
         log_api_response("login", request.method, getattr(request, 'body', None), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+@csrf_exempt
+def validate_token(request):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("validate_token", request.method, None, error_response)
+        return JsonResponse(error_response, status=405)
+    
+    user, err = require_auth(request)
+    if err:
+        return err
+    
+    try:
+        # Clean up expired sessions
+        cleanup_expired_sessions()
+        
+        # If we get here, the token is valid
+        response = {
+            "valid": True,
+            "username": user.get("username"),
+            "role": user.get("role"),
+            "name": user.get("name")
+        }
+        log_api_response("validate_token", request.method, None, response)
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("validate_token", request.method, None, {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+@csrf_exempt
+def logout(request):
+    if request.method != "POST":
+        error_response = {"error": "Only POST allowed"}
+        log_api_response("logout", request.method, None, error_response)
+        return JsonResponse(error_response, status=405)
+    
+    try:
+        token = get_auth_token_from_request(request)
+        if token:
+            # Remove the session from the database
+            sessions_collection.delete_one({"token": token})
+        
+        response = {"message": "Logged out successfully"}
+        log_api_response("logout", request.method, None, response)
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("logout", request.method, None, {**error_response, "stack_trace": stack_trace})
         return JsonResponse(error_response, status=500)
 
 
@@ -289,8 +360,16 @@ def update_item_out(request, pass_no):
     if err:
         return err
     try:
+        print(f"=== ITEM OUT UPDATE DEBUG ===")
+        print(f"Pass Number: {pass_no}")
+        print(f"User: {user.get('username')}")
+        print(f"Request body: {request.body}")
+        
         body = json.loads(request.body or b"{}")
         updates = body.get("items") or []
+
+        print(f"Parsed body: {body}")
+        print(f"Updates array: {updates}")
 
         doc = collection.find_one({"passNo": pass_no})
         if not doc:
@@ -298,43 +377,55 @@ def update_item_out(request, pass_no):
             log_api_response("update_item_out", request.method, {"passNo": pass_no}, response)
             return JsonResponse(response, status=404)
 
-        serial_to_out = {u.get("serialNumber"): bool(u.get("itemOut", False)) for u in updates if u.get("serialNumber")}
-        date_out_updates = {u.get("serialNumber"): u.get("dateOut") for u in updates if u.get("serialNumber")}
-        rectification_updates = {u.get("serialNumber"): u.get("itemRectificationDetails") for u in updates if u.get("serialNumber")}
-        
-        print(f"DEBUG: Received updates: {updates}")
-        print(f"DEBUG: Serial to out mapping: {serial_to_out}")
-        print(f"DEBUG: Date out updates: {date_out_updates}")
-        print(f"DEBUG: Rectification updates: {rectification_updates}")
-        
-        new_items = []
-        for it in doc.get("items", []):
-            serial = it.get("serialNumber")
-            if serial in serial_to_out:
-                it["itemOut"] = serial_to_out[serial]
-                # Set dateOut to current date if item is marked as out and no date is provided
-                if it["itemOut"] and (not it.get("dateOut") or it.get("dateOut") is None):
-                    it["dateOut"] = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
-                    print(f"DEBUG: Auto-setting dateOut for serial {serial} to {it['dateOut']}")
-                elif serial in date_out_updates:
-                    # Always update dateOut if provided in the request, even if it's empty string
-                    it["dateOut"] = date_out_updates[serial]
-                    print(f"DEBUG: Setting dateOut for serial {serial} to {date_out_updates[serial]}")
-                # Clear dateOut when itemOut is unchecked
-                elif not it["itemOut"]:
-                    it["dateOut"] = None
-                    print(f"DEBUG: Clearing dateOut for serial {serial} since itemOut is False")
-                # Update rectification details if provided
-                if serial in rectification_updates and rectification_updates[serial] is not None:
-                    it["itemRectificationDetails"] = rectification_updates[serial]
-                    print(f"DEBUG: Setting rectification for serial {serial} to {rectification_updates[serial]}")
-            new_items.append(it)
+        print(f"Found document: {doc.get('passNo')}")
+        print(f"Original items: {doc.get('items')}")
 
-        collection.update_one({"passNo": pass_no}, {"$set": {"items": new_items, "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata")), "updatedBy": user.get("username")}})
+        # Check if we have the same number of items
+        original_items = doc.get("items", [])
+        if len(updates) != len(original_items):
+            response = {"error": f"Number of items mismatch. Expected {len(original_items)}, got {len(updates)}"}
+            return JsonResponse(response, status=400)
+
+        print(f"DEBUG: Received updates: {updates}")
+        
+        # Update items by position (index) instead of serial number
+        new_items = []
+        for i, (original_item, update_item) in enumerate(zip(original_items, updates)):
+            print(f"Processing item {i}: original={original_item.get('serialNumber')}, update={update_item.get('serialNumber')}")
+            
+            # Create updated item
+            updated_item = original_item.copy()
+            updated_item["itemOut"] = bool(update_item.get("itemOut", False))
+            
+            # Handle dateOut
+            if updated_item["itemOut"]:
+                if update_item.get("dateOut"):
+                    updated_item["dateOut"] = update_item["dateOut"]
+                elif not original_item.get("dateOut"):
+                    updated_item["dateOut"] = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+                    print(f"DEBUG: Auto-setting dateOut for item {i} to {updated_item['dateOut']}")
+            else:
+                updated_item["dateOut"] = None
+                print(f"DEBUG: Clearing dateOut for item {i} since itemOut is False")
+            
+            # Handle rectification details
+            if "itemRectificationDetails" in update_item:
+                updated_item["itemRectificationDetails"] = update_item["itemRectificationDetails"] or ""
+            
+            print(f"Updated item {i}: {updated_item}")
+            new_items.append(updated_item)
+
+        print(f"Final items array: {new_items}")
+        
+        result = collection.update_one({"passNo": pass_no}, {"$set": {"items": new_items, "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata")), "updatedBy": user.get("username")}})
+        print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
+        
         response = {"message": "ItemOut statuses updated"}
         log_api_response("update_item_out", request.method, {"passNo": pass_no, "updates_count": len(updates)}, response)
         return JsonResponse(response)
     except Exception as e:
+        print(f"ERROR in update_item_out: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         stack_trace = traceback.format_exc()
         error_response = {"error": str(e)}
         log_api_response("update_item_out", request.method, {"passNo": pass_no}, {**error_response, "stack_trace": stack_trace})
@@ -450,7 +541,10 @@ def _shape_search_result(doc):
         "passNo": doc.get("passNo"),
         "projectName": doc.get("projectName"),
         "dateIn": doc.get("dateIn"),
-        "numItems": len(doc.get("items", [])),
+        "customer": doc.get("customer", {}),
+        "items": doc.get("items", []),
+        "createdBy": doc.get("createdBy", ""),
+        "updatedBy": doc.get("updatedBy", ""),
     }
 
 
@@ -499,10 +593,10 @@ def search_download(request):
         
         # Write header row
         writer.writerow([
-            "Pass No", "Date In", "Project Name", 
+            "Pass No", "Project Name", 
             "Customer Name", "Customer Unit Address", "Customer Location", "Customer Phone",
             "Equipment Type", "Item Name", "Part Number", "Serial Number", "Defect Details", 
-            "Status", "Date Out", "Item Rectification Details"
+            "Status", "Date In", "Date Out", "Item Rectification Details", "CreatedBy", "updatedBy"
         ])
         
         # Write data rows - one row per item
@@ -512,6 +606,8 @@ def search_download(request):
             project_name = doc.get("projectName", "")
             customer = doc.get("customer", {})
             items = doc.get("items", [])
+            createdBy = doc.get("createdBy", "")
+            updatedBy = doc.get("updatedBy", "")
             
             # Filter items by part number if searching by part number
             search_type = params.get("type")
@@ -539,7 +635,6 @@ def search_download(request):
                 
                 writer.writerow([
                     pass_no,
-                    date_in,
                     project_name,
                     customer.get("name", ""),
                     customer.get("unitAddress", ""),
@@ -551,8 +646,11 @@ def search_download(request):
                     item.get("serialNumber", ""),
                     item.get("defectDetails", ""),
                     status,
+                    date_in,
                     date_out,
-                    item.get("itemRectificationDetails", "")
+                    item.get("itemRectificationDetails", ""),
+                    createdBy,
+                    updatedBy
                 ])
 
         csv_content = output.getvalue()

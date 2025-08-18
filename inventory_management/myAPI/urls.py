@@ -4,6 +4,8 @@ from . import views
 urlpatterns = [
     # auth and admin
     path('login', views.login),  # POST /api/login
+    path('validate-token', views.validate_token),  # GET /api/validate-token
+    path('logout', views.logout),  # POST /api/logout
     path('admin/users', views.admin_add_user),  # POST /api/admin/users
 
     # item in/out and CRUD by passNo

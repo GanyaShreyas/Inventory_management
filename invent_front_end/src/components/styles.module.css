@@ -431,6 +431,7 @@
 }
 
 .card {
+  zoom: 0.7;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12);
@@ -457,8 +458,8 @@
 
 .form { display: grid; gap: 14px; }
 .formRow { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.formGrid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.formGrid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.formGrid2 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.formGrid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
 
 .label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #0f2233; }
 .control {

@@ -4,12 +4,17 @@ import { Link, useLocation } from 'react-router-dom';
 
 function Sidebar() {
   const loc = useLocation();
-  const links = [
+  const role = sessionStorage.getItem('role') || localStorage.getItem('role');
+  
+  // Show different navigation based on user role
+  const links = role === 'admin' ? [
+    { to: '/admin/add-user', label: 'Add User' },
+  ] : [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/item-in', label: 'Item In' },
     { to: '/item-out', label: 'Item Out' },
-    { to: '/search', label: 'Search' },
-    { to: '/edit', label: 'Edit' },
+    { to: '/search', label: 'Report' },
+    { to: '/edit', label: 'Edit/View' },
   ];
   return (
     <nav className={styles.sidebar}>
