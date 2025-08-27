@@ -81,14 +81,6 @@ WSGI_APPLICATION = 'main_project.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'inventory_management',
-        'USER': 'root',
-        'PASSWORD': '123456',
-        'HOST': 'localhost',
-        'PORT': '3306',
-    }
 }
 
 
