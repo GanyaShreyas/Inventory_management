@@ -433,7 +433,7 @@ function ItemInPage() {
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>Item In</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/dashboard')}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -656,7 +656,7 @@ function ItemOutPage() {
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>Item Out</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/dashboard')}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -763,6 +763,14 @@ function SearchPage() {
     try {
       const params = new URLSearchParams();
       params.set('type', type);
+      if (type !== 'DateRange' && !value) {
+        setStatus('Please enter a value');
+        return;
+      }
+      if (type === 'DateRange' && !from && !to) {
+        setStatus('Please enter a date range');
+        return;
+      }
       if (type !== 'DateRange' && value) params.set('value', value);
       if (from) params.set('from', from);
       if (to) params.set('to', to);
@@ -779,6 +787,14 @@ function SearchPage() {
     try {
       const params = new URLSearchParams();
       params.set('type', type);
+      if (type !== 'DateRange' && !value) {
+        setStatus('Please enter a value');
+        return;
+      }
+      if (type === 'DateRange' && !from && !to) {
+        setStatus('Please enter a date range');
+        return;
+      }
       if (type !== 'DateRange' && value) params.set('value', value);
       if (from) params.set('from', from);
       if (to) params.set('to', to);
@@ -787,7 +803,11 @@ function SearchPage() {
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'search_results.csv'; a.click();
+      a.href = url; 
+      const defaultName = `${new Date().toISOString().split('T')[0]}_item_details.csv`;
+      a.download = defaultName;
+      a.click();
+      // a.download = 'search_results.csv'; a.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
@@ -878,7 +898,7 @@ function SearchPage() {
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>View</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/dashboard')}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -1114,7 +1134,7 @@ function EditPage() {
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>Edit/View</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/dashboard')}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
         </div>
       </div>
       <div className={styles.card}>

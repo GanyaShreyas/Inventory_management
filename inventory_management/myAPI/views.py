@@ -656,9 +656,10 @@ def search_download(request):
         csv_content = output.getvalue()
         output.close()
         
+        default_filename = f"{datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%Y-%m-%d')}_inventory_export.csv"
         # Return CSV file
         response = HttpResponse(csv_content, content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="inventory_export.csv"'
+        response['Content-Disposition'] = f'attachment; filename="{default_filename}"'
         
         log_api_response("search_download", request.method, dict(params), {"rows": len(docs)})
         return response
