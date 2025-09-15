@@ -9,10 +9,11 @@ function Sidebar() {
   // Show different navigation based on user role
   const links = role === 'admin' ? [
     { to: '/admin/add-user', label: 'Add User' },
+    { to: '/admin/manage-projects', label: 'Manage Projects' },
   ] : [
     { to: '/dashboard', label: 'Dashboard' },
-    { to: '/item-in', label: 'Item In' },
-    { to: '/item-out', label: 'Item Out' },
+    { to: '/item-in', label: 'ITEM IN' },
+    { to: '/item-out', label: 'ITEM Out' },
     { to: '/search', label: 'Report' },
     { to: '/edit', label: 'Edit/View' },
   ];

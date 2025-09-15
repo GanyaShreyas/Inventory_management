@@ -16,4 +16,12 @@ urlpatterns = [
     # search
     path('search', views.search),  # GET /api/search
     path('search/download', views.search_download),  # GET /api/search/download
+
+    # Admin Projects
+    path('admin/projects/add', views.admin_add_project),  # POST /api/admin/projects/add
+    path('admin/projects/items/add', views.admin_add_item),  # POST /api/admin/projects/items/add
+    path('admin/projects/items/edit', views.admin_edit_item),  # PUT /api/admin/projects/items/edit
+    path('admin/projects/items/delete', views.admin_delete_item),  # DELETE /api/admin/projects/items/delete
+    path('admin/projects/list', views.admin_get_projects),  # GET /api/admin/projects/list
+    path('admin/projects/items', views.admin_get_project_items),  # GET /api/admin/projects/items?projectName=...
 ]

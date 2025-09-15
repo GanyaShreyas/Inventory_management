@@ -11,13 +11,199 @@ import csv
 from io import StringIO
 
 
-# Set up MongoDB connection (adjust URI as needed)
 client = MongoClient("mongodb://inventory_admin:BEL%402479@localhost:27017/")
 db = client["inventory_db"]  # Use your DB name
 collection = db["product_details"]
 log_collection = db["api_logs"]
 users_collection = db["users"]
 sessions_collection = db["sessions"]
+
+# Admin Projects collection
+admin_projects_collection = db["admin_projects"]
+# ----------------------
+# Admin Projects Endpoints
+# ----------------------
+
+@csrf_exempt
+def admin_add_project(request):
+    """Add a new project (with duplicate check)"""
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    try:
+        body = json.loads(request.body or b"{}")
+        project_name = (body.get("projectName") or "").strip()
+        if not project_name:
+            return JsonResponse({"error": "Project name required"}, status=400)
+        exists = admin_projects_collection.find_one({"projectName": project_name})
+        if exists:
+            return JsonResponse({"error": "Project already exists"}, status=409)
+        admin_projects_collection.insert_one({
+            "projectName": project_name,
+            "items": [],
+            "createdBy": user.get("username"),
+            "createdAt": datetime.now(ZoneInfo("Asia/Kolkata")),
+        })
+        return JsonResponse({"message": "Project created", "projectName": project_name}, status=201)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@csrf_exempt
+def admin_add_item(request):
+    """Add item data to a project (with duplicate hierarchy check)"""
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    try:
+        body = json.loads(request.body or b"{}")
+        project_name = (body.get("projectName") or "").strip()
+        item_type = (body.get("itemType") or "").strip()
+        item_name = (body.get("itemName") or "").strip()
+        part_no = (body.get("partNo") or "").strip()
+        if not (project_name and item_type and item_name and part_no):
+            return JsonResponse({"error": "All fields required"}, status=400)
+        # Check for duplicate in hierarchy
+        exists = admin_projects_collection.find_one({
+            "projectName": project_name,
+            "items": {
+                "$elemMatch": {
+                    "itemType": item_type,
+                    "itemName": item_name,
+                    "partNo": part_no
+                }
+            }
+        })
+        if exists:
+            return JsonResponse({"error": "Duplicate item in hierarchy"}, status=409)
+        # Add item
+        result = admin_projects_collection.update_one(
+            {"projectName": project_name},
+            {"$push": {"items": {
+                "itemType": item_type,
+                "itemName": item_name,
+                "partNo": part_no,
+                "createdBy": user.get("username"),
+                "createdAt": datetime.now(ZoneInfo("Asia/Kolkata"))
+            }}}
+        )
+        if result.matched_count == 0:
+            return JsonResponse({"error": "Project not found"}, status=404)
+        return JsonResponse({"message": "Item added"}, status=201)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@csrf_exempt
+def admin_edit_item(request):
+    """Edit item data in a project"""
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+    if request.method != "PUT":
+        return JsonResponse({"error": "Only PUT allowed"}, status=405)
+    try:
+        body = json.loads(request.body or b"{}")
+        project_name = (body.get("projectName") or "").strip()
+        items = body.get("items")
+        # If batch replace (Save All)
+        if project_name and isinstance(items, list):
+            result = admin_projects_collection.update_one(
+                {"projectName": project_name},
+                {"$set": {"items": items}}
+            )
+            if result.matched_count == 0:
+                return JsonResponse({"error": "Project not found"}, status=404)
+            return JsonResponse({"message": "All items replaced successfully", "count": len(items)})
+        # Else, single item edit
+        old_item_type = (body.get("oldItemType") or body.get("itemType") or "").strip()
+        old_item_name = (body.get("oldItemName") or body.get("itemName") or "").strip()
+        old_part_no = (body.get("oldPartNo") or body.get("partNo") or "").strip()
+        new_data = body.get("newData") or {}
+        if not (project_name and old_item_type and old_item_name and old_part_no and new_data):
+            return JsonResponse({"error": "All fields required"}, status=400)
+        result = admin_projects_collection.update_one(
+            {"projectName": project_name, "items": {
+                "$elemMatch": {
+                    "itemType": old_item_type,
+                    "itemName": old_item_name,
+                    "partNo": old_part_no
+                }
+            }},
+            {"$set": {"items.$": {
+                **new_data,
+                "updatedBy": user.get("username"),
+                "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata"))
+            }}}
+        )
+        if result.matched_count == 0:
+            return JsonResponse({"error": "Item not found"}, status=404)
+        return JsonResponse({"message": "Item updated"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@csrf_exempt
+def admin_delete_item(request):
+    """Delete item data from a project"""
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Only DELETE allowed"}, status=405)
+    try:
+        body = json.loads(request.body or b"{}")
+        project_name = (body.get("projectName") or "").strip()
+        item_type = (body.get("itemType") or "").strip()
+        item_name = (body.get("itemName") or "").strip()
+        part_no = (body.get("partNo") or "").strip()
+        if not (project_name and item_type and item_name and part_no):
+            return JsonResponse({"error": "All fields required"}, status=400)
+        result = admin_projects_collection.update_one(
+            {"projectName": project_name},
+            {"$pull": {"items": {
+                "itemType": item_type,
+                "itemName": item_name,
+                "partNo": part_no
+            }}}
+        )
+        if result.matched_count == 0:
+            return JsonResponse({"error": "Project not found"}, status=404)
+        return JsonResponse({"message": "Item deleted"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+def admin_get_projects(request):
+    """Get all projects"""
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+    try:
+        projects = list(admin_projects_collection.find({}, {"_id": 0, "projectName": 1}))
+        return JsonResponse({"projects": [p["projectName"] for p in projects]})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+def admin_get_project_items(request):
+    """Get all items for a project"""
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+    try:
+        project_name = request.GET.get("projectName", "").strip()
+        if not project_name:
+            return JsonResponse({"error": "Project name required"}, status=400)
+        doc = admin_projects_collection.find_one({"projectName": project_name}, {"_id": 0, "items": 1})
+        if not doc:
+            return JsonResponse({"error": "Project not found"}, status=404)
+        return JsonResponse({"items": doc.get("items", [])})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 # Bootstrap a default admin user if none exists
 try:
@@ -547,28 +733,64 @@ def _shape_search_result(doc):
         "updatedBy": doc.get("updatedBy", ""),
     }
 
-
 def search(request):
     if request.method != "GET":
         error_response = {"error": "Only GET allowed"}
         log_api_response("search", request.method, dict(request.GET), error_response)
         return JsonResponse(error_response, status=405)
+
     user, err = require_auth(request)
     if err:
         return err
+
     try:
         params = request.GET
         query = _build_search_query(params)
         docs = list(collection.find(query))
-        results = [_shape_search_result({**d, "_id": None}) for d in docs]
+
+        results = []
+        search_type = params.get("type")
+        search_value = params.get("value")
+
+        for doc in docs:
+            # If searching by part number, filter items in the document
+            if search_type == "ItemPartNo" and search_value:
+                filtered_items = _filter_items_by_part_number(doc.get("items", []), search_value)
+                doc = {**doc, "items": filtered_items}
+
+            results.append(_shape_search_result({**doc, "_id": None}))
+
         response = {"count": len(results), "data": results}
         log_api_response("search", request.method, dict(params), {"count": response["count"]})
         return JsonResponse(response)
+
     except Exception as e:
         stack_trace = traceback.format_exc()
         error_response = {"error": str(e)}
         log_api_response("search", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
         return JsonResponse(error_response, status=500)
+
+# def search(request):
+#     if request.method != "GET":
+#         error_response = {"error": "Only GET allowed"}
+#         log_api_response("search", request.method, dict(request.GET), error_response)
+#         return JsonResponse(error_response, status=405)
+#     user, err = require_auth(request)
+#     if err:
+#         return err
+#     try:
+#         params = request.GET
+#         query = _build_search_query(params)
+#         docs = list(collection.find(query))
+#         results = [_shape_search_result({**d, "_id": None}) for d in docs]
+#         response = {"count": len(results), "data": results}
+#         log_api_response("search", request.method, dict(params), {"count": response["count"]})
+#         return JsonResponse(response)
+#     except Exception as e:
+#         stack_trace = traceback.format_exc()
+#         error_response = {"error": str(e)}
+#         log_api_response("search", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
+#         return JsonResponse(error_response, status=500)
 
 
 @csrf_exempt

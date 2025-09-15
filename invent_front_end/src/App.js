@@ -93,7 +93,7 @@ function LoginPage({ onLoggedIn }) {
       
       if (typeof onLoggedIn === 'function') onLoggedIn(data.role);
       if (data.role === 'admin') {
-        navigate('/admin/add-user', { replace: true });
+        navigate('/admin/admin-dashboard', { replace: true });
       } else {
         navigate('/dashboard', { replace: true });
       }
@@ -145,6 +145,37 @@ function LoginPage({ onLoggedIn }) {
       </div>
     </div>
   );
+}
+
+function AdminDashboard() {
+  return (
+    <div className={styles.inventoryLayout}>
+      <Sidebar />
+      <div className={styles.inventoryMain}>
+        <Header />
+        <div className={styles.page}>
+          <div className={styles.pageHeader}>
+            <div className={styles.pageTitle}>Admin Dashboard</div>
+            <span className={styles.pill}>Admin</span>
+          </div>
+          <div className={styles.cardGrid}>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>Add Users</div>
+              <div className={styles.cardDesc}>Create new users.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/add-user">Open</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>Manage Projects</div>
+              <div className={styles.cardDesc}>Add new projects or manage existing projects.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/manage-projects">Open</Link>
+            </div>
+          </div>
+        </div>
+        <Footer />
+      </div>
+
+    </div>
+  )
 }
 
 function Dashboard() {
@@ -250,9 +281,9 @@ function AdminAddUserPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed');
       
-      alert('User created successfully!');
-      setStatus('User created');
-      clearForm();
+  alert('User created successfully!');
+  setStatus('User created');
+  clearForm();
     } catch (err) {
       alert(`Error: ${err.message}`);
       setStatus(`Error: ${err.message}`);
@@ -266,10 +297,8 @@ function AdminAddUserPage() {
         <Header />
         <div className={styles.page}>
           <div className={styles.pageHeader}>
-            <div className={styles.pageTitle}>Admin - Add User</div>
-            <div className={styles.pageActions}>
-              <span className={styles.pill}>Admin</span>
-            </div>
+            <div className={styles.pageTitle}>Admin - Add User</div>    
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>Close</button>
           </div>
       <div className={styles.card}>
         <form onSubmit={onSubmit} className={styles.form}>
@@ -305,8 +334,62 @@ function ItemInPage() {
   const [customerLocation, setCustomerLocation] = useState('');
   const [customerPhoneNo, setCustomerPhoneNo] = useState('');
   const [projectName, setProjectName] = useState('');
+  const [projectOptions, setProjectOptions] = useState([]);
+  const [itemType, setItemType] = useState('');
+  const [itemTypeOptions, setItemTypeOptions] = useState([]);
+  const [itemNameOptions, setItemNameOptions] = useState([]);
+  const [partNoOptions, setPartNoOptions] = useState([]);
   const [passNo, setPassNo] = useState('');
-  const [items, setItems] = useState([{ equipmentType: 'unit', itemName: '', partNumber: '', serialNumber: '', defectDetails: '' }]);
+  const [items, setItems] = useState([{ equipmentType: '', itemName: '', partNumber: '', serialNumber: '', defectDetails: '' }]);
+  // Fetch projects on dropdown open
+  const fetchProjects = async () => {
+    const res = await fetch(`${apiBase()}/admin/projects/list`, { headers: { ...authHeaders() } });
+    const data = await res.json();
+    setProjectOptions(data.projects || []);
+  };
+
+    // Duplicate item row (already declared, remove duplicate)
+  // Duplicate item row
+  const duplicateItem = (idx) => {
+    setItems((prev) => {
+      const copy = [...prev];
+      copy.splice(idx + 1, 0, { ...prev[idx] });
+      return copy;
+    });
+  };
+  // Fetch item type options when projectName changes
+  useEffect(() => {
+    if (!projectName) return;
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => {
+        const types = Array.from(new Set((data.items || []).map(it => it.itemType)));
+        setItemTypeOptions(types);
+      });
+  }, [projectName]);
+
+  // Fetch item name options when projectName or itemType changes
+  useEffect(() => {
+    if (!projectName || !itemType) return;
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => {
+        const filtered = (data.items || []).filter(it => it.itemType === itemType);
+        setItemNameOptions(Array.from(new Set(filtered.map(it => it.itemName))));
+      });
+  }, [projectName, itemType]);
+
+  // Fetch part no options when projectName, itemType, or itemName changes
+  useEffect(() => {
+    if (!projectName || !itemType || !items[0].itemName) return;
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => {
+        // Find all items matching selected type and name
+        const filtered = (data.items || []).filter(it => it.itemType === itemType && it.itemName === items[0].itemName);
+        setPartNoOptions(Array.from(new Set(filtered.map(it => it.partNo))));
+      });
+  }, [projectName, itemType, items[0].itemName]);
   const [status, setStatus] = useState('');
   const navigate = useNavigate();
 
@@ -441,7 +524,12 @@ function ItemInPage() {
           <div className={styles.formGrid2}>
           <label className={styles.label}>Private Pass No<input className={styles.control} type="number" value={passNo} onChange={(e) => setPassNo(e.target.value)} required /></label>
             <label className={styles.label}>Date In<input className={styles.control} type="date" value={dateIn} onChange={(e) => setDateIn(e.target.value)} /></label>
-            <label className={styles.label}>Project Name<input className={styles.control} value={projectName} onChange={(e) => setProjectName(e.target.value)} /></label>
+            <label className={styles.label}>Project Name
+              <select className={styles.control} value={projectName} onChange={e => { setProjectName(e.target.value); setItemType(''); }} onFocus={fetchProjects} required>
+                <option value="">Select Project</option>
+                {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
+              </select>
+            </label>
             <label className={styles.label}>Customer Name<input className={styles.control} value={customerName} onChange={(e) => setCustomerName(e.target.value)} required /></label>
             <label className={styles.label}>Customer Unit Address<input className={styles.control} value={customerUnitAddress} onChange={(e) => setCustomerUnitAddress(e.target.value)} /></label>
             <label className={styles.label}>Customer Location<input className={styles.control} value={customerLocation} onChange={(e) => setCustomerLocation(e.target.value)} /></label>
@@ -461,8 +549,8 @@ function ItemInPage() {
               )}
             </label>
           </div>
-          <div className={styles.tableWrap} style={{ marginTop: 8 }}>
-            <table className={styles.table}>
+          <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto' }}>
+            <table className={styles.table} style={{ minWidth: 900 }}>
               <thead>
                 <tr>
                   <th>Item Type</th><th>Item Name *</th><th>Part No *</th><th>Serial No *</th><th>Defect</th><th>Actions</th>
@@ -472,18 +560,54 @@ function ItemInPage() {
                 {items.map((it, idx) => (
                   <tr key={idx}>
                     <td>
-                      <select className={styles.control} value={it.equipmentType} onChange={(e) => updateItem(idx, 'equipmentType', e.target.value)}>
-                        <option value="unit">Unit</option>
-                        <option value="module">Module</option>
-                        <option value="PCB">PCB</option>
-                        <option value="Accessory">Accessories</option>
+                      <select className={styles.control} value={it.equipmentType} onChange={e => { updateItem(idx, 'equipmentType', e.target.value); setItemType(e.target.value); }} onFocus={() => {
+                        if (projectName) {
+                          fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
+                            .then(res => res.json())
+                            .then(data => {
+                              const types = Array.from(new Set((data.items || []).map(it => it.itemType)));
+                              setItemTypeOptions(types);
+                            });
+                        }
+                      }} required>
+                        <option value="">Select Type</option>
+                        {itemTypeOptions.map((type, i) => <option key={i} value={type}>{type}</option>)}
                       </select>
                     </td>
-                    <td><input className={styles.control} value={it.itemName} onChange={(e) => updateItem(idx, 'itemName', e.target.value)} required /></td>
-                    <td><input className={styles.control} value={it.partNumber} onChange={(e) => updateItem(idx, 'partNumber', e.target.value)} required /></td>
+                    <td>
+                      <select className={styles.control} value={it.itemName} onChange={e => updateItem(idx, 'itemName', e.target.value)} onFocus={() => {
+                        if (projectName && itemType) {
+                          fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
+                            .then(res => res.json())
+                            .then(data => {
+                              const filtered = (data.items || []).filter(it => it.itemType === itemType);
+                              setItemNameOptions(Array.from(new Set(filtered.map(it => it.itemName))));
+                            });
+                        }
+                      }} required>
+                        <option value="">Select Item Name</option>
+                        {itemNameOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <select className={styles.control} value={it.partNumber} onChange={e => updateItem(idx, 'partNumber', e.target.value)} onFocus={() => {
+                        if (projectName && itemType) {
+                          fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
+                            .then(res => res.json())
+                            .then(data => {
+                              const filtered = (data.items || []).filter(it => it.itemType === itemType);
+                              setPartNoOptions(Array.from(new Set(filtered.map(it => it.partNo))));
+                            });
+                        }
+                      }} required>
+                        <option value="">Select Part No</option>
+                        {partNoOptions.map((no, i) => <option key={i} value={no}>{no}</option>)}
+                      </select>
+                    </td>
                     <td><input className={styles.control} value={it.serialNumber} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} required /></td>
                     <td><input className={styles.control} value={it.defectDetails} onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)} /></td>
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => duplicateItem(idx)} style={{ marginRight: 4 }}>Duplicate</button>
                       <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => deleteItem(idx)} disabled={items.length === 1}>Delete</button>
                     </td>
                   </tr>
@@ -507,6 +631,13 @@ function ItemInPage() {
 function ItemOutPage() {
   const [passNo, setPassNo] = useState('');
   const [record, setRecord] = useState(null);
+  const [projectOptions, setProjectOptions] = useState([]);
+  // Fetch project options on mount
+  useEffect(() => {
+    fetch(`${apiBase()}/admin/projects/list`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => setProjectOptions(data.projects || []));
+  }, []);
   const [status, setStatus] = useState('');
   const navigate = useNavigate();
 
@@ -679,13 +810,18 @@ function ItemOutPage() {
             <div><b>Private Pass No:</b> {record.passNo}</div>
             <div><b>Date In:</b> {record.dateIn}</div>
             <div><b>Customer:</b> {record.customer?.name}</div>
-            <div><b>Project:</b> {record.projectName}</div>
+            <div><b>Project:</b> 
+              <select className={styles.control} value={record.projectName || ''} onChange={e => setRecord(prev => ({ ...prev, projectName: e.target.value }))}>
+                <option value="">Select Project</option>
+                {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
+              </select>
+            </div>
             <div><b>Phone:</b> {record.customer?.phone}</div>
             <div><b>Unit Address:</b> {record.customer?.unitAddress}</div>
             <div><b>Location:</b> {record.customer?.location}</div>
           </div>
-          <div className={styles.tableWrap} style={{ marginTop: 12 }}>
-            <table className={styles.table}>
+          <div className={styles.tableWrap} style={{ marginTop: 12, maxHeight: 350, overflowY: 'auto' }}>
+            <table className={styles.table} style={{ minWidth: 900 }}>
               <thead>
                 <tr>
                   <th>Type</th><th>Name</th><th>Part No</th><th>Serial No</th><th>Defect</th><th>ItemOut</th><th>Date Out</th><th>Rectification Details</th>
@@ -694,7 +830,15 @@ function ItemOutPage() {
               <tbody>
                 {record.items?.map((it, idx) => (
                   <tr key={idx}>
-                    <td>{it.equipmentType}</td>
+                    <td>
+                      <select className={styles.control} value={it.equipmentType || ''} onChange={e => updateItemOut(idx, e.target.value)}>
+                        <option value="">Select Type</option>
+                        <option value="unit">Unit</option>
+                        <option value="module">Module</option>
+                        <option value="PCB">PCB</option>
+                        <option value="Accessory">Accessories</option>
+                      </select>
+                    </td>
                     <td>{it.itemName}</td>
                     <td>{it.partNumber}</td>
                     <td>{it.serialNumber}</td>
@@ -738,6 +882,386 @@ function ItemOutPage() {
       {status ? <div className={styles.card} style={{ marginTop: 12, padding: 12 }}>{status}</div> : null}
     </div>
   );
+}
+
+function ManageProjects() {
+  const [mode, setMode] = React.useState(''); // '' | 'add' | 'select'
+  const navigate = useNavigate();
+  // Add Project State
+  const [projectName, setProjectName] = React.useState('');
+  const [addStatus, setAddStatus] = React.useState('');
+  const [items, setItems] = React.useState([{ itemType: '', itemName: '', partNo: '' }]);
+
+  // Select Project State
+  const [projects, setProjects] = React.useState([]);
+  const [selectedProject, setSelectedProject] = React.useState('');
+  const [projectItems, setProjectItems] = React.useState([]);
+  const [selectStatus, setSelectStatus] = React.useState('');
+
+  // Edit/Delete Item State
+  const [editIdx, setEditIdx] = React.useState(-1);
+  const [editItem, setEditItem] = React.useState(null);
+
+  // Add item data state for Select Project page (move hooks to very top)
+  const [newItem, setNewItem] = React.useState({ itemType: '', itemName: '', partNo: '' });
+  const [addItemStatus, setAddItemStatus] = React.useState('');
+
+  const clearForm = () => {
+      setMode('');
+      setProjectName('');
+      setAddStatus('');
+      setItems([{ itemType: '', itemName: '', partNo: '' }]);
+      setProjects([]);
+      setSelectedProject('');
+      setProjectItems([]);
+      setSelectStatus('');
+      setEditIdx(-1);
+      setEditItem(null);
+  }
+
+  // Add Project Handlers
+  const handleAddProject = async () => {
+    setAddStatus('');
+    if (!projectName.trim()) {
+      setAddStatus('Project name required');
+      return;
+    }
+    try {
+      const res = await fetch('http://localhost:8000/api/admin/projects/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ projectName })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+  // Clear project name field before navigating further
+  setProjectName('');
+  // Switch to select mode, pre-select new project, fetch items
+  setMode('select');
+  setSelectedProject(projectName);
+  fetchProjects();
+  fetchProjectItems(projectName);
+  alert('Project created successfully! You can now add items.');
+  setAddStatus('Project created. You can now add items.');
+    } catch (err) {
+      setAddStatus(err.message);
+    }
+  };
+  const fetchProjects = async () => {
+    setSelectStatus('');
+    try {
+      const res = await fetch('http://localhost:8000/api/admin/projects/list', {
+        headers: { ...authHeaders() }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      setProjects(data.projects || []);
+    } catch (err) {
+      setSelectStatus(err.message);
+    }
+  };
+
+  const fetchProjectItems = async (projectName) => {
+    setSelectStatus('');
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, {
+        headers: { ...authHeaders() }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      setProjectItems(data.items || []);
+    } catch (err) {
+      setSelectStatus(err.message);
+    }
+  };
+
+  // Edit Item Handlers
+  const startEditItem = (idx) => {
+    setEditIdx(idx);
+    setEditItem({ ...projectItems[idx] });
+  };
+
+  const handleEditItemChange = (key, value) => {
+    setEditItem((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const saveEditItem = async () => {
+    if (!editItem.itemType || !editItem.itemName || !editItem.partNo) {
+      setSelectStatus('All fields required');
+      return;
+    }
+    // Get the original item for lookup
+    const originalItem = projectItems[editIdx];
+    try {
+      const res = await fetch('http://localhost:8000/api/admin/projects/items/edit', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          projectName: selectedProject,
+          oldItemType: originalItem.itemType,
+          oldItemName: originalItem.itemName,
+          oldPartNo: originalItem.partNo,
+          newData: editItem
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      setSelectStatus('Item updated');
+      setEditIdx(-1);
+      setEditItem(null);
+      fetchProjectItems(selectedProject);
+    } catch (err) {
+      setSelectStatus(err.message);
+    }
+  };
+
+  const deleteItem = async (idx) => {
+    const item = projectItems[idx];
+    if (!window.confirm('Delete this item?')) return;
+    try {
+      const res = await fetch('http://localhost:8000/api/admin/projects/items/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          projectName: selectedProject,
+          itemType: item.itemType,
+          itemName: item.itemName,
+          partNo: item.partNo
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      setSelectStatus('Item deleted');
+      fetchProjectItems(selectedProject);
+    } catch (err) {
+      setSelectStatus(err.message);
+    }
+  };
+  const [saveAllStatus, setSaveAllStatus] = React.useState('');
+
+  // --- UI ---
+  if (!mode) {
+    return (
+      <div className={styles.inventoryLayout}>
+        <Sidebar />
+        <div className={styles.inventoryMain}>
+          <Header />
+          <div className={styles.page}>
+            <div className={styles.pageHeader}>
+              <div className={styles.pageTitle}>Manage Projects (Admin)</div>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>Close</button>
+            </div>
+            <div className={styles.card} style={{ maxWidth: 500, margin: '0 auto', padding: 32 }}>
+              <div className={styles.buttonGroup} style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setMode('add')}>ADD PROJECT</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => { setMode('select'); fetchProjects(); }}>SELECT PROJECT</button>
+              </div>
+            </div>
+          </div>
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'add') {
+    return (
+      <div className={styles.inventoryLayout}>
+        <Sidebar />
+        <div className={styles.inventoryMain}>
+          <Header />
+          <div className={styles.page}>
+            <div className={styles.pageHeader}>
+              <div className={styles.pageTitle}>Add Project</div>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>Close</button>
+            </div>
+            <div className={styles.card} style={{ maxWidth: 1000, margin: '0 auto', padding: 32 }}>
+              <div style={{ marginBottom: 16 }}>
+                <label className={styles.label}>Project Name:
+                  <input value={projectName} onChange={e => setProjectName(e.target.value)} className={styles.control} style={{ marginLeft: 8 }} />
+                </label>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginLeft: 12, marginTop: 10 }} onClick={handleAddProject}>Create Project</button>
+              </div>
+            </div>
+          </div>
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+  if (mode === 'select') {
+    const handleSaveAllItems = async () => {
+      setSaveAllStatus('');
+      if (!selectedProject) {
+        setSaveAllStatus('Select a project first');
+        return;
+      }
+      if (!projectItems.length) {
+        setSaveAllStatus('No items to save');
+        return;
+      }
+      // Validate all items
+      for (const item of projectItems) {
+        if (!item.itemType || !item.itemName || !item.partNo) {
+          setSaveAllStatus('All item fields required');
+          return;
+        }
+      }
+      try {
+        const res = await fetch('http://localhost:8000/api/admin/projects/items/edit', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({
+            projectName: selectedProject,
+            items: projectItems
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Failed');
+  alert('All items updated successfully!');
+  setSaveAllStatus('All items updated successfully!');
+  fetchProjectItems(selectedProject);
+      } catch (err) {
+        setSaveAllStatus(err.message);
+      }
+    };
+    const handleAddNewItem = async () => {
+      setAddItemStatus('');
+      if (!selectedProject) {
+        setAddItemStatus('Select a project first');
+        return;
+      }
+      if (!newItem.itemType || !newItem.itemName || !newItem.partNo) {
+        setAddItemStatus('All fields required');
+        return;
+      }
+      try {
+        const res = await fetch('http://localhost:8000/api/admin/projects/items/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({
+            projectName: selectedProject,
+            itemType: newItem.itemType,
+            itemName: newItem.itemName,
+            partNo: newItem.partNo
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Failed');
+  alert('Item added successfully!');
+  setAddItemStatus('Item added successfully!');
+  setNewItem({ itemType: '', itemName: '', partNo: '' });
+  fetchProjectItems(selectedProject);
+      } catch (err) {
+        setAddItemStatus(err.message);
+      }
+    };
+
+    return (
+      <div className={styles.inventoryLayout}>
+        <Sidebar />
+        <div className={styles.inventoryMain}>
+          <Header />
+          <div className={styles.page} style={{ height: 'calc(100vh - 120px)', overflowY: 'auto', overflowX: 'auto' }}>
+            <div className={styles.pageHeader}>
+              <div className={styles.pageTitle}>Select Project</div>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>Close</button>
+            </div>
+            <div className={styles.card} style={{ maxWidth: 1000, margin: '0 auto', padding: 32 }}>
+              <div style={{ marginBottom: 16 }}>
+                <label className={styles.label}>Project:
+                  <select className={styles.control} value={selectedProject} onChange={e => { setSelectedProject(e.target.value); fetchProjectItems(e.target.value); }} style={{ marginLeft: 8 }}>
+                    <option value="">Select</option>
+                    {projects.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
+                  </select>
+                </label>
+              </div>
+              {selectStatus && <div style={{ color: '#b91c1c', marginBottom: 12 }}>{selectStatus}</div>}
+              {selectedProject && (
+                <div>
+                  <h3 style={{ marginTop: 24 }}>Items for {selectedProject}</h3>
+                  <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto'}}>
+                    <table className={styles.table} style={{ minWidth: 600 }}>
+                      <thead>
+                        <tr>
+                          <th>Item Type</th><th>Item Name</th><th>Part No</th><th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {projectItems.map((it, idx) => (
+                          <tr key={idx}>
+                            {editIdx === idx ? (
+                              <>
+                                <td>
+                                  <select className={styles.control} value={editItem.itemType} onChange={e => handleEditItemChange('itemType', e.target.value)}>
+                                    <option value="UNIT">UNIT</option>
+                                    <option value="MODULE">MODULE</option>
+                                    <option value="PCB">PCB</option>
+                                    <option value="ACCESSORIES">ACCESSORIES</option>
+                                  </select>
+                                </td>
+                                <td><input className={styles.control} value={editItem.itemName} onChange={e => handleEditItemChange('itemName', e.target.value)} /></td>
+                                <td><input className={styles.control} value={editItem.partNo} onChange={e => handleEditItemChange('partNo', e.target.value)} /></td>
+                                <td>
+                                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={saveEditItem}>Save</button>
+                                  <button className={`${styles.btn} ${styles.btnGhost}`} style={{ marginLeft: 8 }} onClick={() => { setEditIdx(-1); setEditItem(null); }}>Cancel</button>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td>{it.itemType}</td>
+                                <td>{it.itemName}</td>
+                                <td>{it.partNo}</td>
+                                <td>
+                                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => startEditItem(idx)}>Edit</button>
+                                  <button className={`${styles.btn} ${styles.btnDanger}`} style={{ marginLeft: 8 }} onClick={() => deleteItem(idx)}>Delete</button>
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Add new item form */}
+                  <div style={{ marginTop: 24, marginBottom: 12, borderTop: '1px solid #eee', paddingTop: 16 }}>
+                    <h4>Add New Item</h4>
+                    <div className={styles.formGrid2}>
+                      <label className={styles.label}>Item Type
+                        <select className={styles.control} value={newItem.itemType} onChange={e => setNewItem({ ...newItem, itemType: e.target.value })}>
+                          <option value="">Select</option>
+                          <option value="UNIT">UNIT</option>
+                          <option value="MODULE">MODULE</option>
+                          <option value="PCB">PCB</option>
+                          <option value="ACCESSORIES">ACCESSORIES</option>
+                        </select>
+                      </label>
+                      <label className={styles.label}>Item Name
+                        <input className={styles.control} value={newItem.itemName} onChange={e => setNewItem({ ...newItem, itemName: e.target.value })} />
+                      </label>
+                      <label className={styles.label}>Part No
+                        <input className={styles.control} value={newItem.partNo} onChange={e => setNewItem({ ...newItem, partNo: e.target.value })} />
+                      </label>
+                    </div>
+                    <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginTop: 8 }} onClick={handleAddNewItem}>Add Item</button>
+                    {addItemStatus && <div style={{ color: addItemStatus.includes('success') ? 'green' : '#b91c1c', marginTop: 8 }}>{addItemStatus}</div>}
+                  </div>
+                </div>
+              )}
+              <div className={styles.pageActions} style={{ marginTop: 16 }}>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginRight: 12 }} onClick={handleSaveAllItems}>Save All</button>
+                <button className={`${styles.btn} ${styles.btnGhost}`} style={{ marginLeft: 12 }} onClick={() => setMode('')}>Back</button>
+              </div>
+              {saveAllStatus && <div style={{ color: saveAllStatus.includes('success') ? 'green' : '#b91c1c', marginTop: 8 }}>{saveAllStatus}</div>}
+            </div>
+          </div>
+          <Footer />
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function SearchPage() {
@@ -825,7 +1349,7 @@ function SearchPage() {
         <div style={{ marginBottom: 12 }}>
           <h3>Search Results ({result.count} entries found)</h3>
         </div>
-        <div className={styles.tableWrap} style={{ overflowX: 'auto' }}>
+        <div className={styles.tableWrap} style={{ overflowX: 'auto', maxHeight: 500, overflowY: 'auto' }}>
           <table className={styles.table} style={{ minWidth: '1400px' }}>
             <thead>
               <tr>
@@ -948,6 +1472,49 @@ function SearchPage() {
 function EditPage() {
   const [passNo, setPassNo] = useState('');
   const [doc, setDoc] = useState(null);
+  const [projectOptions, setProjectOptions] = useState([]);
+  const [itemTypeOptions, setItemTypeOptions] = useState([]);
+  const [itemNameOptions, setItemNameOptions] = useState([]);
+  const [partNoOptions, setPartNoOptions] = useState([]);
+
+    // Duplicate item row (already declared, remove duplicate)
+  // Duplicate item row
+  const duplicateItem = (idx) => {
+    setDoc((prev) => {
+      const copy = [...prev];
+      copy.splice(idx + 1, 0, { ...prev[idx] });
+      return copy;
+    });
+  };
+
+  // Fetch project options on mount
+  useEffect(() => {
+    fetch(`${apiBase()}/admin/projects/list`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => setProjectOptions(data.projects || []));
+  }, []);
+
+  // Fetch item type options when doc.projectName changes
+  useEffect(() => {
+    if (!doc?.projectName) return;
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(doc.projectName)}`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => {
+        const types = Array.from(new Set((data.items || []).map(it => it.itemType)));
+        setItemTypeOptions(types);
+      });
+  }, [doc?.projectName]);
+
+  // Fetch item name and part no options when doc.projectName or itemType changes
+  useEffect(() => {
+    if (!doc?.projectName) return;
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(doc.projectName)}`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => {
+        setItemNameOptions(Array.from(new Set((data.items || []).map(it => it.itemName))));
+        setPartNoOptions(Array.from(new Set((data.items || []).map(it => it.partNo))));
+      });
+  }, [doc?.projectName]);
   const [status, setStatus] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const navigate = useNavigate();
@@ -1164,7 +1731,12 @@ function EditPage() {
             <div className={styles.formGrid2}>
               <label className={styles.label}>Private Pass No<input className={styles.control} value={doc.passNo || ''} readOnly /></label>
               <label className={styles.label}>Date In<input className={styles.control} type="date" value={doc.dateIn || ''} onChange={(e) => updateDocField('dateIn', e.target.value)} readOnly={!isEditing} /></label>
-              <label className={styles.label}>Project Name<input className={styles.control} value={doc.projectName || ''} onChange={(e) => updateDocField('projectName', e.target.value)} readOnly={!isEditing} /></label>
+              <label className={styles.label}>Project Name
+                <select className={styles.control} value={doc.projectName || ''} onChange={e => updateDocField('projectName', e.target.value)} disabled={!isEditing} required>
+                  <option value="">Select Project</option>
+                  {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
+                </select>
+              </label>
               <label className={styles.label}>Customer Name<input className={styles.control} value={doc.customer?.name || ''} onChange={(e) => updateDocField('customer.name', e.target.value)} readOnly={!isEditing} required /></label>
               <label className={styles.label}>Customer Unit Address<input className={styles.control} value={doc.customer?.unitAddress || ''} onChange={(e) => updateDocField('customer.unitAddress', e.target.value)} readOnly={!isEditing} /></label>
               <label className={styles.label}>Customer Location<input className={styles.control} value={doc.customer?.location || ''} onChange={(e) => updateDocField('customer.location', e.target.value)} readOnly={!isEditing} /></label>
@@ -1185,7 +1757,7 @@ function EditPage() {
                 )}
               </label>
             </div>
-            <div className={styles.tableWrap} style={{ marginTop: 8, overflowX: 'auto' }}>
+            <div className={styles.tableWrap} style={{ marginTop: 8, overflowX: 'auto', maxHeight: 350, overflowY: 'auto' }}>
               <table className={styles.table} style={{ minWidth: '1200px' }}>
                 <thead>
                   <tr>
@@ -1197,15 +1769,23 @@ function EditPage() {
                   {doc.items?.map((it, idx) => (
                     <tr key={idx}>
                       <td>
-                        <select className={styles.control} value={it.equipmentType || ''} onChange={(e) => updateItem(idx, 'equipmentType', e.target.value)} disabled={!isEditing}>
-                          <option value="unit">Unit</option>
-                          <option value="module">Module</option>
-                          <option value="PCB">PCB</option>
-                          <option value="Accessory">Accessories</option>
+                        <select className={styles.control} value={it.equipmentType || ''} onChange={e => updateItem(idx, 'equipmentType', e.target.value)} disabled={!isEditing} required>
+                          <option value="">Select Type</option>
+                          {itemTypeOptions.map((type, i) => <option key={i} value={type}>{type}</option>)}
                         </select>
                       </td>
-                      <td><input className={styles.control} value={it.itemName || ''} onChange={(e) => updateItem(idx, 'itemName', e.target.value)} readOnly={!isEditing} required /></td>
-                      <td><input className={styles.control} value={it.partNumber || ''} onChange={(e) => updateItem(idx, 'partNumber', e.target.value)} readOnly={!isEditing} required /></td>
+                      <td>
+                        <select className={styles.control} value={it.itemName || ''} onChange={e => updateItem(idx, 'itemName', e.target.value)} disabled={!isEditing} required>
+                          <option value="">Select Item Name</option>
+                          {itemNameOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <select className={styles.control} value={it.partNumber || ''} onChange={e => updateItem(idx, 'partNumber', e.target.value)} disabled={!isEditing} required>
+                          <option value="">Select Part No</option>
+                          {partNoOptions.map((no, i) => <option key={i} value={no}>{no}</option>)}
+                        </select>
+                      </td>
                       <td><input className={styles.control} value={it.serialNumber || ''} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} readOnly={!isEditing} required /></td>
                       <td><input className={styles.control} value={it.defectDetails || ''} onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)} readOnly={!isEditing} /></td>
                       <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!it.itemOut} onChange={(e) => updateItem(idx, 'itemOut', e.target.checked)} disabled={!isEditing} /></td>
@@ -1231,7 +1811,15 @@ function EditPage() {
                         />
                       </td>
                       {isEditing && (
-                        <td style={{ textAlign: 'center', minWidth: '100px' }}>
+                        <td style={{ textAlign: 'center', minWidth: '100px', whiteSpace: 'nowrap' }}>
+                          <button 
+                            type="button" 
+                            className={`${styles.btn} ${styles.btnGhost}`} 
+                            onClick={() => duplicateItem(idx)} 
+                            style={{ fontSize: '0.85rem', padding: '6px 12px', marginRight: 4 }}
+                          >
+                            Duplicate
+                          </button>
                           <button 
                             type="button" 
                             className={`${styles.btn} ${styles.btnDanger}`} 
@@ -1443,6 +2031,16 @@ function App() {
         <Route path="/admin/add-user" element={
           <ProtectedRoute requiredRole="admin">
             <AdminAddUserPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/manage-projects" element={
+          <ProtectedRoute requiredRole="admin">
+            <ManageProjects />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/admin-Dashboard" element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminDashboard />
           </ProtectedRoute>
         } />
         <Route path="/dashboard" element={

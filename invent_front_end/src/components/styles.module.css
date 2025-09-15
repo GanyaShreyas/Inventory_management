@@ -38,6 +38,41 @@
   top: 100%;
   right: 0;
   background-color: white;
+
+.manageProjectsContainer {
+  padding: 32px;
+  background: #f8fafc;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  max-width: 500px;
+  margin: 40px auto;
+  text-align: center;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin-top: 32px;
+}
+
+.projectButton {
+  background: linear-gradient(90deg, #2563eb 0%, #1e40af 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 16px 32px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(30,64,175,0.08);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.projectButton:hover {
+  background: linear-gradient(90deg, #1e40af 0%, #2563eb 100%);
+  transform: translateY(-2px) scale(1.04);
+}
   border: 1px solid #e1e5e9;
   border-radius: 8px;
   padding: 16px;
