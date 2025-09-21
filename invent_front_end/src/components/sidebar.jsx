@@ -8,18 +8,18 @@ function Sidebar() {
   
   // Show different navigation based on user role
   const links = role === 'admin' ? [
-    { to: '/admin/add-user', label: 'Add User' },
-    { to: '/admin/manage-projects', label: 'Manage Projects' },
+    { to: '/admin/add-user', label: 'ADD USER' },
+    { to: '/admin/manage-projects', label: 'MANAGE PROJECTS' },
   ] : [
-    { to: '/dashboard', label: 'Dashboard' },
+    { to: '/dashboard', label: 'DASHBOARD' },
     { to: '/item-in', label: 'ITEM IN' },
-    { to: '/item-out', label: 'ITEM Out' },
-    { to: '/search', label: 'Report' },
-    { to: '/edit', label: 'Edit/View' },
+    { to: '/item-out', label: 'ITEM OUT' },
+    { to: '/search', label: 'REPORT' },
+    { to: '/edit', label: 'EDIT/VIEW' },
   ];
   return (
     <nav className={styles.sidebar}>
-      <div className={styles.sidebarLogo}>Inventory</div>
+      <div className={styles.sidebarLogo}>INVENTORY</div>
       <ul className={styles.sidebarNav}>
         {links.map((l) => (
           <li key={l.to} style={{ width: '100%', marginBottom: 4 }}>

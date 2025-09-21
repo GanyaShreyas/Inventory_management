@@ -486,6 +486,8 @@ def items_in(request):
                 "itemOut": False,
                 "dateOut": None,  # Will be set when item goes out
                 "itemRectificationDetails": "",  # New field for rectification details
+                "itemFeedback1Details": "",  # New field for feedback 1 details
+                "itemFeedback2Details": "",  # New field for feedback 2 details
             })
         
         # Sort items by part number in ascending order
@@ -597,6 +599,12 @@ def update_item_out(request, pass_no):
             # Handle rectification details
             if "itemRectificationDetails" in update_item:
                 updated_item["itemRectificationDetails"] = update_item["itemRectificationDetails"] or ""
+
+            if "itemFeedback1Details" in update_item:
+                updated_item["itemFeedback1Details"] = update_item["itemFeedback1Details"] or ""
+
+            if "itemFeedback2Details" in update_item:
+                updated_item["itemFeedback2Details"] = update_item["itemFeedback2Details"] or ""
             
             print(f"Updated item {i}: {updated_item}")
             new_items.append(updated_item)
@@ -627,7 +635,7 @@ def edit_record(request, pass_no):
         if request.method == "GET":
             doc = collection.find_one({"passNo": pass_no}, {"_id": 0})
             if not doc:
-                response = {"error": "Not found"}
+                response = {"error": "Entry Not found"}
                 log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
                 return JsonResponse(response, status=404)
             log_api_response("edit_record", request.method, {"passNo": pass_no}, doc)
@@ -650,6 +658,10 @@ def edit_record(request, pass_no):
                         item["dateOut"] = None
                     if "itemRectificationDetails" not in item:
                         item["itemRectificationDetails"] = ""
+                    if "itemFeedback1Details" not in item:
+                        item["itemFeedback1Details"] = ""
+                    if "itemFeedback2Details" not in item:
+                        item["itemFeedback2Details"] = ""
                 set_fields["items"].sort(key=lambda x: x.get("partNumber", ""))
             
             set_fields["updatedAt"] = datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -702,7 +714,7 @@ def _build_search_query(params):
     from_date = params.get("from")
     to_date = params.get("to")
     query = {}
-    if search_type == "PassNo" and value:
+    if search_type == "passNo" and value:
         query["passNo"] = value
     elif search_type == "ItemPartNo" and value:
         query["items.partNumber"] = value
@@ -714,6 +726,25 @@ def _build_search_query(params):
     if date_cond:
         query["dateIn"] = date_cond
     return query
+
+
+def _filter_items(items, part_number=None, status=None):
+    """Filter items by part number and/or status (In/Out)."""
+    filtered = []
+    for item in items:
+        # Part number filter
+        if part_number and item.get("partNumber") != part_number:
+            continue
+
+        # Status filter
+        if status == "In" and not (item.get("itemIn") and not item.get("itemOut")):
+            continue
+        if status == "Out" and not (item.get("itemIn") and item.get("itemOut")):
+            continue
+
+        filtered.append(item)
+    return filtered
+
 
 def _filter_items_by_part_number(items, part_number):
     """Filter items to only include those matching the part number search"""
@@ -751,13 +782,17 @@ def search(request):
         results = []
         search_type = params.get("type")
         search_value = params.get("value")
+        status = params.get("status")  # "In" or "Out"
 
         for doc in docs:
-            # If searching by part number, filter items in the document
-            if search_type == "ItemPartNo" and search_value:
-                filtered_items = _filter_items_by_part_number(doc.get("items", []), search_value)
-                doc = {**doc, "items": filtered_items}
+            filtered_items = doc.get("items", [])
 
+            if search_type == "ItemPartNo" and search_value:
+                filtered_items = _filter_items(filtered_items, part_number=search_value, status=status)
+            elif status in ("In", "Out"):
+                filtered_items = _filter_items(filtered_items, status=status)
+
+            doc = {**doc, "items": filtered_items}
             results.append(_shape_search_result({**doc, "_id": None}))
 
         response = {"count": len(results), "data": results}
@@ -769,29 +804,6 @@ def search(request):
         error_response = {"error": str(e)}
         log_api_response("search", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
         return JsonResponse(error_response, status=500)
-
-# def search(request):
-#     if request.method != "GET":
-#         error_response = {"error": "Only GET allowed"}
-#         log_api_response("search", request.method, dict(request.GET), error_response)
-#         return JsonResponse(error_response, status=405)
-#     user, err = require_auth(request)
-#     if err:
-#         return err
-#     try:
-#         params = request.GET
-#         query = _build_search_query(params)
-#         docs = list(collection.find(query))
-#         results = [_shape_search_result({**d, "_id": None}) for d in docs]
-#         response = {"count": len(results), "data": results}
-#         log_api_response("search", request.method, dict(params), {"count": response["count"]})
-#         return JsonResponse(response)
-#     except Exception as e:
-#         stack_trace = traceback.format_exc()
-#         error_response = {"error": str(e)}
-#         log_api_response("search", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
-#         return JsonResponse(error_response, status=500)
-
 
 @csrf_exempt
 def search_download(request):
@@ -818,7 +830,7 @@ def search_download(request):
             "Pass No", "Project Name", 
             "Customer Name", "Customer Unit Address", "Customer Location", "Customer Phone",
             "Equipment Type", "Item Name", "Part Number", "Serial Number", "Defect Details", 
-            "Status", "Date In", "Date Out", "Item Rectification Details", "CreatedBy", "updatedBy"
+            "Status", "Date In", "Date Out", "Item Rectification Details", "Feedback 1 details", "Feedback 2 details", "CreatedBy", "updatedBy"
         ])
         
         # Write data rows - one row per item
@@ -831,10 +843,18 @@ def search_download(request):
             createdBy = doc.get("createdBy", "")
             updatedBy = doc.get("updatedBy", "")
             
-            # Filter items by part number if searching by part number
             search_type = params.get("type")
-            if search_type == "ItemPartNo" and params.get("value"):
-                items = _filter_items_by_part_number(items, params.get("value"))
+            status = params.get("status")
+            search_value = params.get("value")
+            if search_type == "ItemPartNo" and search_value:
+                items = _filter_items(items, part_number = search_value, status=status)
+            elif status in ("In", "Out"):
+                items = _filter_items(items, status=status)
+
+            # Filter items by part number if searching by part number
+            
+            # if search_type == "ItemPartNo" and params.get("value"):
+            #     items = _filter_items_by_part_number(items, params.get("value"))
             
             for item in items:
                 # Determine status: OUT if both itemIn and itemOut are true, else IN
@@ -871,6 +891,8 @@ def search_download(request):
                     date_in,
                     date_out,
                     item.get("itemRectificationDetails", ""),
+                    item.get("itemFeedback1Details", ""),
+                    item.get("itemFeedback2Details", ""),
                     createdBy,
                     updatedBy
                 ])
@@ -890,4 +912,59 @@ def search_download(request):
         stack_trace = traceback.format_exc()
         error_response = {"error": str(e)}
         log_api_response("search_download", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+    
+@csrf_exempt
+def search_suggestions(request):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("search_suggestions", request.method, dict(request.GET), error_response)
+        return JsonResponse(error_response, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        params = request.GET
+        search_type = params.get("type")
+        value = (params.get("value") or "").strip()
+        if not search_type or not value:
+            response = {"error": "type and value are required"}
+            log_api_response("search_suggestions", request.method, dict(params), response)
+            return JsonResponse(response, status=400)
+
+        suggestions = set()
+        if search_type == "passNo":
+            docs = collection.find({"passNo": {"$regex": f"^{value}", "$options": "i"}}, {"_id": 0, "passNo": 1}).limit(10)
+            for doc in docs:
+                suggestions.add(doc.get("passNo"))
+        elif search_type == "ItemPartNo":
+            docs = collection.find({"items.partNumber": {"$regex": f"^{value}", "$options": "i"}}, {"_id": 0, "items.partNumber": 1}).limit(50)
+            for doc in docs:
+                for item in doc.get("items", []):
+                    part_no = item.get("partNumber")
+                    if part_no and part_no.lower().startswith(value.lower()):
+                        suggestions.add(part_no)
+                        if len(suggestions) >= 10:
+                            break
+                if len(suggestions) >= 10:
+                    break
+        elif search_type == "ProjectName":
+            docs = admin_projects_collection.find({"projectName": {"$regex": f"^{value}", "$options": "i"}}, {"_id": 0, "projectName": 1}).limit(10)
+            for doc in docs:
+                suggestions.add(doc.get("projectName"))
+        else:
+            response = {"error": "Invalid type"}
+            log_api_response("search_suggestions", request.method, dict(params), response)
+            return JsonResponse(response, status=400)
+
+        suggestions = list(suggestions)[:10]  # Limit to 10 suggestions
+        response = {"suggestions": suggestions}
+        log_api_response("search_suggestions", request.method, dict(params), {"count": len(suggestions)})
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("search_suggestions", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
         return JsonResponse(error_response, status=500)

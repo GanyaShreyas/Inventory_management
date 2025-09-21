@@ -3,7 +3,8 @@ import Header from './components/header';
 import Sidebar from './components/sidebar';
 import Footer from './components/footer';
 import styles from './components/styles.module.css';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { use, useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
 
 function apiBase() {
@@ -155,19 +156,19 @@ function AdminDashboard() {
         <Header />
         <div className={styles.page}>
           <div className={styles.pageHeader}>
-            <div className={styles.pageTitle}>Admin Dashboard</div>
-            <span className={styles.pill}>Admin</span>
+            <div className={styles.pageTitle}>ADMIN DASHBOARD</div>
+            <span className={styles.pill}>ADMIN</span>
           </div>
           <div className={styles.cardGrid}>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>Add Users</div>
-              <div className={styles.cardDesc}>Create new users.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/add-user">Open</Link>
+              <div className={styles.cardTitle}>ADD USERS</div>
+              <div className={styles.cardDesc}>CREATE NEW USERS.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/add-user">OPEN</Link>
             </div>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>Manage Projects</div>
-              <div className={styles.cardDesc}>Add new projects or manage existing projects.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/manage-projects">Open</Link>
+              <div className={styles.cardTitle}>MANAGE PROJECTS</div>
+              <div className={styles.cardDesc}>ADD NEW PROJECTS OR MANAGE EXISTING PROJECTS.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/manage-projects">OPEN</Link>
             </div>
           </div>
         </div>
@@ -186,29 +187,29 @@ function Dashboard() {
         <Header />
         <div className={styles.page}>
           <div className={styles.pageHeader}>
-            <div className={styles.pageTitle}>Dashboard</div>
-            <span className={styles.pill}>User</span>
+            <div className={styles.pageTitle}>DASHBOARD</div>
+            <span className={styles.pill}>USER</span>
           </div>
           <div className={styles.cardGrid}>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>Item In</div>
+              <div className={styles.cardTitle}>ITEM IN</div>
               <div className={styles.cardDesc}>Create a new incoming pass with customer and item details.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/item-in">Open</Link>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/item-in">OPEN</Link>
             </div>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>Item Out</div>
+              <div className={styles.cardTitle}>ITEM OUT</div>
               <div className={styles.cardDesc}>Mark items as out for a given pass number.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/item-out">Open</Link>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/item-out">OPEN</Link>
             </div>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>Report</div>
+              <div className={styles.cardTitle}>REPORT</div>
               <div className={styles.cardDesc}>Find records by private pass no, part no, project or date range.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/search">Open</Link>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/search">OPEN</Link>
             </div>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>Edit/View</div>
+              <div className={styles.cardTitle}>EDIT/VIEW</div>
               <div className={styles.cardDesc}>Edit or delete a record by pass number.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/edit">Open</Link>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/edit">OPEN</Link>
             </div>
           </div>
         </div>
@@ -297,25 +298,25 @@ function AdminAddUserPage() {
         <Header />
         <div className={styles.page}>
           <div className={styles.pageHeader}>
-            <div className={styles.pageTitle}>Admin - Add User</div>    
-            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>Close</button>
+            <div className={styles.pageTitle}>ADMIN - ADD USER</div>    
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>CLOSE</button>
           </div>
       <div className={styles.card}>
         <form onSubmit={onSubmit} className={styles.form}>
           <div className={styles.formGrid2}>
-            <label className={styles.label}>Name<input className={styles.control} value={name} onChange={(e) => setName(e.target.value)} required /></label>
-            <label className={styles.label}>Username<input className={styles.control} value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="off" /></label>
-            <label className={styles.label}>Password<input className={styles.control} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" /></label>
-            <label className={styles.label}>Role
+            <label className={styles.label}>NAME<input className={styles.control} value={name} onChange={(e) => setName(e.target.value)} required /></label>
+            <label className={styles.label}>USERNAME<input className={styles.control} value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="off" /></label>
+            <label className={styles.label}>PASSWORD<input className={styles.control} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" /></label>
+            <label className={styles.label}>ROLE
               <select className={styles.control} value={role} onChange={(e) => setRole(e.target.value)}>
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
+                <option value="user">USER</option>
+                <option value="admin">ADMIN</option>
               </select>
             </label>
           </div>
           {status ? <div>{status}</div> : null}
           <div className={styles.pageActions}>
-            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">Create</button>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">CREATE</button>
           </div>
         </form>
       </div>
@@ -335,12 +336,57 @@ function ItemInPage() {
   const [customerPhoneNo, setCustomerPhoneNo] = useState('');
   const [projectName, setProjectName] = useState('');
   const [projectOptions, setProjectOptions] = useState([]);
-  const [itemType, setItemType] = useState('');
-  const [itemTypeOptions, setItemTypeOptions] = useState([]);
-  const [itemNameOptions, setItemNameOptions] = useState([]);
-  const [partNoOptions, setPartNoOptions] = useState([]);
+  
+    // Per-row item options
   const [passNo, setPassNo] = useState('');
-  const [items, setItems] = useState([{ equipmentType: '', itemName: '', partNumber: '', serialNumber: '', defectDetails: '' }]);
+  // (Already declared below with per-row options)
+    const [items, setItems] = useState([
+      {
+        equipmentType: '',
+        itemName: '',
+        partNumber: '',
+        serialNumber: '',
+        defectDetails: '',
+        itemTypeOptions: [],
+        itemNameOptions: [],
+        partNoOptions: []
+      }
+    ]);
+    // Get unique item types for the row (call on focus of Type dropdown)
+const fetchItemTypeOptions = async (idx) => {
+  if (!projectName) return;
+  const res = await fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } });
+  const data = await res.json();
+  const uniqueTypes = [...new Set((data.items || []).map(it => it.itemType).filter(Boolean))];
+  setItems(prev => prev.map((it, i) => i === idx ? { ...it, itemTypeOptions: uniqueTypes } : it));
+};
+
+// Get item names for a given equipmentType — pass type explicitly to avoid stale reads
+const fetchItemNameOptions = async (idx, equipmentType) => {
+  if (!projectName || !equipmentType) return;
+  const res = await fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } });
+  const data = await res.json();
+  const names = [...new Set((data.items || [])
+    .filter(it => it.itemType === equipmentType)
+    .map(it => it.itemName)
+    .filter(Boolean)
+  )];
+  setItems(prev => prev.map((it, i) => i === idx ? { ...it, itemNameOptions: names } : it));
+};
+
+// Get part numbers for a given equipmentType + itemName
+const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
+  if (!projectName || !equipmentType || !itemName) return;
+  const res = await fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } });
+  const data = await res.json();
+  const parts = [...new Set((data.items || [])
+    .filter(it => it.itemType === equipmentType && it.itemName === itemName)
+    .map(it => it.partNo)
+    .filter(Boolean)
+  )];
+  setItems(prev => prev.map((it, i) => i === idx ? { ...it, partNoOptions: parts } : it));
+};
+
   // Fetch projects on dropdown open
   const fetchProjects = async () => {
     const res = await fetch(`${apiBase()}/admin/projects/list`, { headers: { ...authHeaders() } });
@@ -357,39 +403,6 @@ function ItemInPage() {
       return copy;
     });
   };
-  // Fetch item type options when projectName changes
-  useEffect(() => {
-    if (!projectName) return;
-    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
-      .then(res => res.json())
-      .then(data => {
-        const types = Array.from(new Set((data.items || []).map(it => it.itemType)));
-        setItemTypeOptions(types);
-      });
-  }, [projectName]);
-
-  // Fetch item name options when projectName or itemType changes
-  useEffect(() => {
-    if (!projectName || !itemType) return;
-    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
-      .then(res => res.json())
-      .then(data => {
-        const filtered = (data.items || []).filter(it => it.itemType === itemType);
-        setItemNameOptions(Array.from(new Set(filtered.map(it => it.itemName))));
-      });
-  }, [projectName, itemType]);
-
-  // Fetch part no options when projectName, itemType, or itemName changes
-  useEffect(() => {
-    if (!projectName || !itemType || !items[0].itemName) return;
-    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
-      .then(res => res.json())
-      .then(data => {
-        // Find all items matching selected type and name
-        const filtered = (data.items || []).filter(it => it.itemType === itemType && it.itemName === items[0].itemName);
-        setPartNoOptions(Array.from(new Set(filtered.map(it => it.partNo))));
-      });
-  }, [projectName, itemType, items[0].itemName]);
   const [status, setStatus] = useState('');
   const navigate = useNavigate();
 
@@ -401,12 +414,37 @@ function ItemInPage() {
     setCustomerPhoneNo('');
     setProjectName('');
     setPassNo('');
-    setItems([{ equipmentType: 'unit', itemName: '', partNumber: '', serialNumber: '', defectDetails: '' }]);
+    clearItemDetails();
     setStatus('');
   };
 
+  const clearItemDetails = () => {
+    setItems([{
+      equipmentType: '',
+      itemName: '',
+      partNumber: '',
+      serialNumber: '',
+      defectDetails: '',
+      itemTypeOptions: [],
+      itemNameOptions: [],
+      partNoOptions: []
+    }]);
+  }
+
   const addItem = () => {
-    setItems([...items, { equipmentType: 'unit', itemName: '', partNumber: '', serialNumber: '', defectDetails: '' }]);
+      setItems([
+        ...items,
+        {
+          equipmentType: '',
+          itemName: '',
+          partNumber: '',
+          serialNumber: '',
+          defectDetails: '',
+          itemTypeOptions: [],
+          itemNameOptions: [],
+          partNoOptions: []
+        }
+      ]);
   };
 
   const deleteItem = (idx) => {
@@ -415,9 +453,37 @@ function ItemInPage() {
     }
   };
 
-  const updateItem = (idx, key, value) => {
-    setItems((prev) => prev.map((it, i) => i === idx ? { ...it, [key]: value } : it));
-  };
+ const updateItem = (idx, key, value) => {
+  setItems((prev) =>
+    prev.map((it, i) => {
+      if (i !== idx) return it; // only update the target row
+
+      const updated = { ...it, [key]: value };
+
+      if (key === 'equipmentType') {
+        updated.itemName = '';
+        updated.partNumber = '';
+        updated.itemNameOptions = [];
+        updated.partNoOptions = [];
+
+        // trigger fetch only for this row
+        fetchItemTypeOptions(idx);
+        fetchItemNameOptions(idx, value);
+      }
+
+      if (key === 'itemName') {
+        updated.partNumber = '';
+        updated.partNoOptions = [];
+
+        // trigger fetch only for this row
+        fetchPartNoOptions(idx, it.equipmentType, value);
+      }
+
+      return updated;
+    })
+  );
+};
+
 
   // Phone number validation function
   const validatePhoneNumber = (phone) => {
@@ -512,114 +578,114 @@ function ItemInPage() {
   };
 
   return (
-    <div className={styles.page} style={{ height: 'calc(100vh - 120px)', overflow: 'auto' }}>
+    <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
       <div className={styles.pageHeader}>
-        <div className={styles.pageTitle}>Item In</div>
+        <div className={styles.pageTitle}>ITEM IN</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>CLOSE</button>
         </div>
       </div>
       <div className={styles.card}>
         <form onSubmit={onSubmit} className={styles.form}>
           <div className={styles.formGrid2}>
-          <label className={styles.label}>Private Pass No<input className={styles.control} type="number" value={passNo} onChange={(e) => setPassNo(e.target.value)} required /></label>
-            <label className={styles.label}>Date In<input className={styles.control} type="date" value={dateIn} onChange={(e) => setDateIn(e.target.value)} /></label>
-            <label className={styles.label}>Project Name
-              <select className={styles.control} value={projectName} onChange={e => { setProjectName(e.target.value); setItemType(''); }} onFocus={fetchProjects} required>
-                <option value="">Select Project</option>
+          <label className={styles.label}>PRIVATE PASS NO<input className={styles.control} type="number" value={passNo} onChange={(e) => setPassNo(e.target.value)} required /></label>
+            <label className={styles.label}>DATE IN<input className={styles.control} type="date" value={dateIn} onChange={(e) => setDateIn(e.target.value)} /></label>
+            <label className={styles.label}>PROJECT NAME
+              <select className={styles.control} value={projectName} onChange={e => { setProjectName(e.target.value); clearItemDetails(); }} onFocus={fetchProjects} required>
+                <option value="">SELECT PROJECT</option>
                 {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
               </select>
             </label>
-            <label className={styles.label}>Customer Name<input className={styles.control} value={customerName} onChange={(e) => setCustomerName(e.target.value)} required /></label>
-            <label className={styles.label}>Customer Unit Address<input className={styles.control} value={customerUnitAddress} onChange={(e) => setCustomerUnitAddress(e.target.value)} /></label>
-            <label className={styles.label}>Customer Location<input className={styles.control} value={customerLocation} onChange={(e) => setCustomerLocation(e.target.value)} /></label>
+            <label className={styles.label}>CUSTOMER NAME<input className={styles.control} value={customerName} onChange={(e) => setCustomerName(e.target.value)} required /></label>
+            <label className={styles.label}>CUSTOMER UNIT ADDRESS<input className={styles.control} value={customerUnitAddress} onChange={(e) => setCustomerUnitAddress(e.target.value)} /></label>
+            <label className={styles.label}>CUSTOMER LOCATION<input className={styles.control} value={customerLocation} onChange={(e) => setCustomerLocation(e.target.value)} /></label>
             <label className={styles.label}>
-              Customer Phone No
+              CUSTOMER PHONE NO
               <input 
                 className={styles.control} 
                 value={customerPhoneNo} 
                 onChange={(e) => setCustomerPhoneNo(e.target.value)}
-                placeholder="Enter 10-digit number (e.g., 9876543210)"
+                placeholder="ENTER 10-DIGIT NUMBER (E.G., 9876543210)"
                 required
               />
               {customerPhoneNo && !validatePhoneNumber(customerPhoneNo) && (
                 <div style={{ color: '#ff6b6b', fontSize: '0.75rem', marginTop: '2px' }}>
-                  Please enter a valid 10-digit phone number
+                  PLEASE ENTER A VALID 10-DIGIT PHONE NUMBER
                 </div>
               )}
             </label>
           </div>
-          <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto' }}>
+          <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto', overflowX: 'auto' }}>
             <table className={styles.table} style={{ minWidth: 900 }}>
               <thead>
                 <tr>
-                  <th>Item Type</th><th>Item Name *</th><th>Part No *</th><th>Serial No *</th><th>Defect</th><th>Actions</th>
+                  <th>ITEM TYPE</th><th>ITEM NAME *</th><th>PART NO *</th><th>SERIAL NO *</th><th>DEFECT</th><th>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((it, idx) => (
-                  <tr key={idx}>
-                    <td>
-                      <select className={styles.control} value={it.equipmentType} onChange={e => { updateItem(idx, 'equipmentType', e.target.value); setItemType(e.target.value); }} onFocus={() => {
-                        if (projectName) {
-                          fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
-                            .then(res => res.json())
-                            .then(data => {
-                              const types = Array.from(new Set((data.items || []).map(it => it.itemType)));
-                              setItemTypeOptions(types);
-                            });
-                        }
-                      }} required>
-                        <option value="">Select Type</option>
-                        {itemTypeOptions.map((type, i) => <option key={i} value={type}>{type}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <select className={styles.control} value={it.itemName} onChange={e => updateItem(idx, 'itemName', e.target.value)} onFocus={() => {
-                        if (projectName && itemType) {
-                          fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
-                            .then(res => res.json())
-                            .then(data => {
-                              const filtered = (data.items || []).filter(it => it.itemType === itemType);
-                              setItemNameOptions(Array.from(new Set(filtered.map(it => it.itemName))));
-                            });
-                        }
-                      }} required>
-                        <option value="">Select Item Name</option>
-                        {itemNameOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <select className={styles.control} value={it.partNumber} onChange={e => updateItem(idx, 'partNumber', e.target.value)} onFocus={() => {
-                        if (projectName && itemType) {
-                          fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, { headers: { ...authHeaders() } })
-                            .then(res => res.json())
-                            .then(data => {
-                              const filtered = (data.items || []).filter(it => it.itemType === itemType);
-                              setPartNoOptions(Array.from(new Set(filtered.map(it => it.partNo))));
-                            });
-                        }
-                      }} required>
-                        <option value="">Select Part No</option>
-                        {partNoOptions.map((no, i) => <option key={i} value={no}>{no}</option>)}
-                      </select>
-                    </td>
-                    <td><input className={styles.control} value={it.serialNumber} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} required /></td>
-                    <td><input className={styles.control} value={it.defectDetails} onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)} /></td>
-                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => duplicateItem(idx)} style={{ marginRight: 4 }}>Duplicate</button>
-                      <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => deleteItem(idx)} disabled={items.length === 1}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
+                  {items.map((it, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <select
+                          className={styles.control}
+                          value={it.equipmentType}
+                          onChange={e => updateItem(idx, 'equipmentType', e.target.value)}
+                          onFocus={() => fetchItemTypeOptions(idx)}
+                          required
+                        >
+                          <option value="">SELECT TYPE</option>
+                          {it.itemTypeOptions.map((type, i) => <option key={i} value={type}>{type}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          className={styles.control}
+                          value={it.itemName}
+                          onChange={e => updateItem(idx, 'itemName', e.target.value)}
+                          onFocus={() => fetchItemNameOptions(idx, it.equipmentType)}
+                          required
+                        >
+                          <option value="">SELECT ITEM NAME</option>
+                          {it.itemNameOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          className={styles.control}
+                          value={it.partNumber}
+                          onChange={e => updateItem(idx, 'partNumber', e.target.value)}
+                          onFocus={() => fetchPartNoOptions(idx, it.equipmentType, it.itemName)}
+                          required
+                        >
+                          <option value="">SELECT PART NO</option>
+                          {it.partNoOptions.map((no, i) => <option key={i} value={no}>{no}</option>)}
+                        </select>
+                      </td>
+                      <td><input className={styles.control} value={it.serialNumber} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} required /></td>
+                      <td>
+                        <textarea
+                          className={styles.control}
+                          placeholder="DEFECT DETAILS"
+                          value={it.defectDetails}
+                          onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)}
+                          rows={1} // looks like an input initially
+                        />
+                        {/* <input className={styles.control} value={it.defectDetails} onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)} /> */}
+                      </td>
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => duplicateItem(idx)} style={{ marginRight: 4 }}>DUPLICATE</button>
+                        <button type="button" className={`${styles.btn} ${styles.btnDanger}`} onClick={() => deleteItem(idx)} disabled={items.length === 1}>DELETE</button>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
             <div style={{ marginTop: 8 }}>
-              <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={addItem}>Add Item</button>
+              <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={addItem}>ADD ITEM</button>
             </div>
           </div>
           <div className={styles.pageActions} style={{ marginTop: 16 }}>
-            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">Save</button>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">SAVE</button>
           </div>
           {status ? <div style={{ marginTop: 12 }}>{status}</div> : null}
         </form>
@@ -632,6 +698,47 @@ function ItemOutPage() {
   const [passNo, setPassNo] = useState('');
   const [record, setRecord] = useState(null);
   const [projectOptions, setProjectOptions] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const suggestionRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (suggestionRef.current && !suggestionRef.current.contains(e.target)) {
+        setShowSuggestions(false); // collapse, but keep suggestions in memory
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (passNo.length >= 2) {
+      const fetchSuggestions = async () => {
+        try {
+          const params = new URLSearchParams();
+          params.set('type', 'passNo');
+          params.set('value', passNo);
+          const res = await fetch(`${apiBase()}/search/suggestions?${params.toString()}`, { headers: { ...authHeaders() } });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || 'Failed to fetch suggestions');
+          setSuggestions(data.suggestions || []);
+        }
+        catch (err) {
+          console.error('Error fetching suggestions:', err);
+          setSuggestions([]);
+        }
+      };
+      fetchSuggestions();
+    }
+    else {
+      setSuggestions([]);
+    }
+  }, [passNo]);
+
   // Fetch project options on mount
   useEffect(() => {
     fetch(`${apiBase()}/admin/projects/list`, { headers: { ...authHeaders() } })
@@ -645,6 +752,8 @@ function ItemOutPage() {
     setPassNo('');
     setRecord(null);
     setStatus('');
+    setSuggestions([]);
+    setShowSuggestions(false);
   };
 
   const fetchRecord = async () => {
@@ -717,6 +826,14 @@ function ItemOutPage() {
     setRecord((prev) => ({ ...prev, items: prev.items.map((it, i) => i === idx ? { ...it, itemRectificationDetails: value } : it) }));
   };
 
+  const updateFeedback1Details = (idx, value) => {
+    setRecord((prev) => ({ ...prev, items: prev.items.map((it, i) => i === idx ? { ...it, itemFeedback1Details: value } : it) }));
+  };
+
+  const updateFeedback2Details = (idx, value) => {
+    setRecord((prev) => ({ ...prev, items: prev.items.map((it, i) => i === idx ? { ...it, itemFeedback2Details: value } : it) }));
+  };
+
   const onSubmit = async () => {
     if (!record) return;
     
@@ -748,7 +865,9 @@ function ItemOutPage() {
         serialNumber: it.serialNumber, 
         itemOut: !!it.itemOut, 
         dateOut: it.dateOut || null, 
-        itemRectificationDetails: it.itemRectificationDetails || '' 
+        itemRectificationDetails: it.itemRectificationDetails || '',
+        itemFeedback1Details: it.itemFeedback1Details || '',
+        itemFeedback2Details: it.itemFeedback2Details || ''
       }));
       
       console.log('=== ITEM OUT SUBMISSION DEBUG ===');
@@ -785,60 +904,61 @@ function ItemOutPage() {
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
-        <div className={styles.pageTitle}>Item Out</div>
+        <div className={styles.pageTitle}>ITEM OUT</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>CLOSE</button>
         </div>
       </div>
       <div className={styles.card}>
         <div className={styles.formRow}>
-          <label className={styles.label}>Private Pass No<input className={styles.control} placeholder="Pass No" value={passNo} onChange={(e) => setPassNo(e.target.value)} /></label>
+          <label className={styles.label}>
+            PRIVATE PASS NO
+            <div className={styles.relativeContainer} ref={suggestionRef}>
+              <input 
+                className={styles.control} 
+                placeholder="PASS NO" 
+                value={passNo} 
+                onChange={(e) => setPassNo(e.target.value)}
+                onFocus={() => setShowSuggestions(true)} // expand again when input is focused 
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className={styles.suggestionsList}>
+                  {suggestions.map((s, i) => (
+                    <li key={i} onClick={() => { setPassNo(s); setShowSuggestions(false); }}>
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </label>
           <div className={styles.pageActions}>
-            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchRecord}>Search</button>
-            {/* <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {
-              console.log('=== API TEST ===');
-              console.log('API Base:', apiBase());
-              console.log('Auth Headers:', authHeaders());
-              console.log('Token:', sessionStorage.getItem('token') || localStorage.getItem('token'));
-            }}>Test API</button> */}
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchRecord}>SEARCH</button>
           </div>
         </div>
       </div>
       {record ? (
-        <div className={styles.card} style={{ marginTop: 12 }}>
+        <div className={styles.cardItemOut} style={{ marginTop: 12 }}>
           <div className={styles.formGrid3}>
-            <div><b>Private Pass No:</b> {record.passNo}</div>
-            <div><b>Date In:</b> {record.dateIn}</div>
-            <div><b>Customer:</b> {record.customer?.name}</div>
-            <div><b>Project:</b> 
-              <select className={styles.control} value={record.projectName || ''} onChange={e => setRecord(prev => ({ ...prev, projectName: e.target.value }))}>
-                <option value="">Select Project</option>
-                {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div><b>Phone:</b> {record.customer?.phone}</div>
-            <div><b>Unit Address:</b> {record.customer?.unitAddress}</div>
-            <div><b>Location:</b> {record.customer?.location}</div>
+            <div><b>PRIVATE PASS NO:</b> {record.passNo}</div>
+            <div><b>DATE IN:</b> {record.dateIn}</div>
+            <div><b>CUSTOMER:</b> {record.customer?.name}</div>
+            <div><b>PROJECT:</b> {record.projectName || ''}</div>
+            <div><b>PHONE:</b> {record.customer?.phone}</div>
+            <div><b>UNIT ADDRESS:</b> {record.customer?.unitAddress}</div>
+            <div><b>LOCATION:</b> {record.customer?.location}</div>
           </div>
-          <div className={styles.tableWrap} style={{ marginTop: 12, maxHeight: 350, overflowY: 'auto' }}>
+          <div className={styles.tableWrap} style={{ marginTop: 12, maxHeight: 350, overflowY: 'auto', overflowX: 'auto' }}>
             <table className={styles.table} style={{ minWidth: 900 }}>
               <thead>
                 <tr>
-                  <th>Type</th><th>Name</th><th>Part No</th><th>Serial No</th><th>Defect</th><th>ItemOut</th><th>Date Out</th><th>Rectification Details</th>
+                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>FEEDBACK 1</th><th>FEEDBACK 2</th>
                 </tr>
               </thead>
               <tbody>
                 {record.items?.map((it, idx) => (
                   <tr key={idx}>
-                    <td>
-                      <select className={styles.control} value={it.equipmentType || ''} onChange={e => updateItemOut(idx, e.target.value)}>
-                        <option value="">Select Type</option>
-                        <option value="unit">Unit</option>
-                        <option value="module">Module</option>
-                        <option value="PCB">PCB</option>
-                        <option value="Accessory">Accessories</option>
-                      </select>
-                    </td>
+                    <td>{it.equipmentType}</td>
                     <td>{it.itemName}</td>
                     <td>{it.partNumber}</td>
                     <td>{it.serialNumber}</td>
@@ -851,23 +971,51 @@ function ItemOutPage() {
                         className={styles.control} 
                         value={it.dateOut || ''} 
                         onChange={(e) => updateDateOut(idx, e.target.value)}
-                        placeholder="Select date"
+                        placeholder="SELECT DATE"
                       />
-                      {!it.dateOut && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>No date set</div>}
-                      {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ Date required for Item Out</div>}
+                      {!it.dateOut && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
+                      {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
                     </td>
                     <td>
-                      <input 
-                        type="text" 
-                        className={styles.control} 
-                        placeholder="Rectification details"
-                        value={it.itemRectificationDetails || ''} 
+                      <textarea
+                        className={styles.control}
+                        placeholder="RECTIFICATION DETAILS"
+                        value={it.itemRectificationDetails || ""}
                         onChange={(e) => updateRectificationDetails(idx, e.target.value)}
                         required={it.itemOut}
+                        rows={1} // looks like an input initially
                       />
-                      {it.itemOut && (!it.itemRectificationDetails || it.itemRectificationDetails.trim() === '') && (
-                        <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ Rectification details required for Item Out</div>
-                      )}
+                      {it.itemOut &&
+                        (!it.itemRectificationDetails ||
+                          it.itemRectificationDetails.trim() === "") && (
+                          <div
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "#ff6b6b",
+                              marginTop: "2px",
+                            }}
+                          >
+                            ⚠️ Rectification details required for Item Out
+                          </div>
+                        )}
+                    </td>
+                    <td>
+                      <textarea
+                        className={styles.control}
+                        placeholder="FEEDBACK 1 DETAILS"
+                        value={it.itemFeedback1Details || ""}
+                        onChange={(e) => updateFeedback1Details(idx, e.target.value)}
+                        rows={1} // looks like an input initially
+                      />
+                    </td>
+                    <td>
+                      <textarea
+                        className={styles.control}
+                        placeholder="FEEDBACK 2 DETAILS"
+                        value={it.itemFeedback2Details || ""}
+                        onChange={(e) => updateFeedback2Details(idx, e.target.value)}
+                        rows={1} // looks like an input initially
+                      />
                     </td>
                   </tr>
                 ))}
@@ -1048,8 +1196,8 @@ function ManageProjects() {
           <Header />
           <div className={styles.page}>
             <div className={styles.pageHeader}>
-              <div className={styles.pageTitle}>Manage Projects (Admin)</div>
-              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>Close</button>
+              <div className={styles.pageTitle}>MANAGE PROJECTS (ADMIN)</div>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>CLOSE</button>
             </div>
             <div className={styles.card} style={{ maxWidth: 500, margin: '0 auto', padding: 32 }}>
               <div className={styles.buttonGroup} style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
@@ -1072,15 +1220,15 @@ function ManageProjects() {
           <Header />
           <div className={styles.page}>
             <div className={styles.pageHeader}>
-              <div className={styles.pageTitle}>Add Project</div>
-              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>Close</button>
+              <div className={styles.pageTitle}>ADD PROJECT</div>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>CLOSE</button>
             </div>
             <div className={styles.card} style={{ maxWidth: 1000, margin: '0 auto', padding: 32 }}>
               <div style={{ marginBottom: 16 }}>
-                <label className={styles.label}>Project Name:
+                <label className={styles.label}>PROJECT NAME:
                   <input value={projectName} onChange={e => setProjectName(e.target.value)} className={styles.control} style={{ marginLeft: 8 }} />
                 </label>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginLeft: 12, marginTop: 10 }} onClick={handleAddProject}>Create Project</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginLeft: 12, marginTop: 10 }} onClick={handleAddProject}>CREATE PROJECT</button>
               </div>
             </div>
           </div>
@@ -1165,13 +1313,13 @@ function ManageProjects() {
           <div className={styles.page} style={{ height: 'calc(100vh - 120px)', overflowY: 'auto', overflowX: 'auto' }}>
             <div className={styles.pageHeader}>
               <div className={styles.pageTitle}>Select Project</div>
-              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>Close</button>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>CLOSE</button>
             </div>
             <div className={styles.card} style={{ maxWidth: 1000, margin: '0 auto', padding: 32 }}>
               <div style={{ marginBottom: 16 }}>
-                <label className={styles.label}>Project:
+                <label className={styles.label}>PROJECT:
                   <select className={styles.control} value={selectedProject} onChange={e => { setSelectedProject(e.target.value); fetchProjectItems(e.target.value); }} style={{ marginLeft: 8 }}>
-                    <option value="">Select</option>
+                    <option value="">SELECT</option>
                     {projects.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
                   </select>
                 </label>
@@ -1179,12 +1327,12 @@ function ManageProjects() {
               {selectStatus && <div style={{ color: '#b91c1c', marginBottom: 12 }}>{selectStatus}</div>}
               {selectedProject && (
                 <div>
-                  <h3 style={{ marginTop: 24 }}>Items for {selectedProject}</h3>
-                  <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto'}}>
+                  <h3 style={{ marginTop: 24 }}>ITEMS FOR {selectedProject}</h3>
+                  <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto', overflowX: 'auto'}}>
                     <table className={styles.table} style={{ minWidth: 600 }}>
                       <thead>
                         <tr>
-                          <th>Item Type</th><th>Item Name</th><th>Part No</th><th>Actions</th>
+                          <th>Item Type</th><th>ITEM NAME</th><th>Part No</th><th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1203,8 +1351,8 @@ function ManageProjects() {
                                 <td><input className={styles.control} value={editItem.itemName} onChange={e => handleEditItemChange('itemName', e.target.value)} /></td>
                                 <td><input className={styles.control} value={editItem.partNo} onChange={e => handleEditItemChange('partNo', e.target.value)} /></td>
                                 <td>
-                                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={saveEditItem}>Save</button>
-                                  <button className={`${styles.btn} ${styles.btnGhost}`} style={{ marginLeft: 8 }} onClick={() => { setEditIdx(-1); setEditItem(null); }}>Cancel</button>
+                                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={saveEditItem}>SAVE</button>
+                                  <button className={`${styles.btn} ${styles.btnGhost}`} style={{ marginLeft: 8 }} onClick={() => { setEditIdx(-1); setEditItem(null); }}>CANCEL</button>
                                 </td>
                               </>
                             ) : (
@@ -1213,8 +1361,8 @@ function ManageProjects() {
                                 <td>{it.itemName}</td>
                                 <td>{it.partNo}</td>
                                 <td>
-                                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => startEditItem(idx)}>Edit</button>
-                                  <button className={`${styles.btn} ${styles.btnDanger}`} style={{ marginLeft: 8 }} onClick={() => deleteItem(idx)}>Delete</button>
+                                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => startEditItem(idx)}>EDIT</button>
+                                  <button className={`${styles.btn} ${styles.btnDanger}`} style={{ marginLeft: 8 }} onClick={() => deleteItem(idx)}>DELETE</button>
                                 </td>
                               </>
                             )}
@@ -1225,7 +1373,7 @@ function ManageProjects() {
                   </div>
                   {/* Add new item form */}
                   <div style={{ marginTop: 24, marginBottom: 12, borderTop: '1px solid #eee', paddingTop: 16 }}>
-                    <h4>Add New Item</h4>
+                    <h4>ADD NEW ITEM</h4>
                     <div className={styles.formGrid2}>
                       <label className={styles.label}>Item Type
                         <select className={styles.control} value={newItem.itemType} onChange={e => setNewItem({ ...newItem, itemType: e.target.value })}>
@@ -1236,21 +1384,21 @@ function ManageProjects() {
                           <option value="ACCESSORIES">ACCESSORIES</option>
                         </select>
                       </label>
-                      <label className={styles.label}>Item Name
+                      <label className={styles.label}>ITEM NAME
                         <input className={styles.control} value={newItem.itemName} onChange={e => setNewItem({ ...newItem, itemName: e.target.value })} />
                       </label>
-                      <label className={styles.label}>Part No
+                      <label className={styles.label}>PART NO
                         <input className={styles.control} value={newItem.partNo} onChange={e => setNewItem({ ...newItem, partNo: e.target.value })} />
                       </label>
                     </div>
-                    <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginTop: 8 }} onClick={handleAddNewItem}>Add Item</button>
+                    <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginTop: 8 }} onClick={handleAddNewItem}>ADD ITEM</button>
                     {addItemStatus && <div style={{ color: addItemStatus.includes('success') ? 'green' : '#b91c1c', marginTop: 8 }}>{addItemStatus}</div>}
                   </div>
                 </div>
               )}
               <div className={styles.pageActions} style={{ marginTop: 16 }}>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginRight: 12 }} onClick={handleSaveAllItems}>Save All</button>
-                <button className={`${styles.btn} ${styles.btnGhost}`} style={{ marginLeft: 12 }} onClick={() => setMode('')}>Back</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} style={{ marginRight: 12 }} onClick={handleSaveAllItems}>SAVE ALL</button>
+                <button className={`${styles.btn} ${styles.btnGhost}`} style={{ marginLeft: 12 }} onClick={() => setMode('')}>BACK</button>
               </div>
               {saveAllStatus && <div style={{ color: saveAllStatus.includes('success') ? 'green' : '#b91c1c', marginTop: 8 }}>{saveAllStatus}</div>}
             </div>
@@ -1265,21 +1413,76 @@ function ManageProjects() {
 }
 
 function SearchPage() {
-  const [type, setType] = useState('PassNo');
+  const [type, setType] = useState('passNo');
+  const [fstatus, setFStatus] = useState('All');
   const [value, setValue] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [result, setResult] = useState(null);
   const [status, setStatus] = useState('');
   const navigate = useNavigate();
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+
+  const suggestionRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (suggestionRef.current && !suggestionRef.current.contains(e.target)) {
+        setShowSuggestions(false); // collapse, but keep suggestions in memory
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log("selectionMode changed:", selectionMode);
+    if (selectionMode){
+      setSelectionMode(false);
+      return;
+    }
+
+    if (value.length >= 2 && (type === 'DateRange')) {
+      setSuggestions([]);
+      return;
+    }
+    if (value.length >= 2) {
+      const fetchSuggestions = async () => {
+        try {
+          const params = new URLSearchParams();
+          params.set('type', type);
+          params.set('value', value);
+          const res = await fetch(`${apiBase()}/search/suggestions?${params.toString()}`, { headers: { ...authHeaders() } });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || 'Failed to fetch suggestions');
+          setSuggestions(data.suggestions || []);
+        }
+        catch (err) {
+          console.error('Error fetching suggestions:', err);
+          setSuggestions([]);
+        }
+      };
+      fetchSuggestions();
+    }
+    else{
+      setSuggestions([]);
+    }
+  }, [value, type, selectionMode]);
 
   const clearForm = () => {
-    setType('PassNo');
+    setType('passNo');
     setValue('');
     setFrom('');
     setTo('');
     setResult(null);
     setStatus('');
+    setFStatus('All');
+    setSuggestions([]);
+    setShowSuggestions(false);
   };
 
   const runSearch = async () => {
@@ -1298,6 +1501,7 @@ function SearchPage() {
       if (type !== 'DateRange' && value) params.set('value', value);
       if (from) params.set('from', from);
       if (to) params.set('to', to);
+      params.set('status',fstatus);
       const res = await fetch(`${apiBase()}/search?${params.toString()}`, { headers: { ...authHeaders() } });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed');
@@ -1322,6 +1526,7 @@ function SearchPage() {
       if (type !== 'DateRange' && value) params.set('value', value);
       if (from) params.set('from', from);
       if (to) params.set('to', to);
+      params.set('status',fstatus);
       const res = await fetch(`${apiBase()}/search/download?${params.toString()}`, { headers: { ...authHeaders() } });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
@@ -1338,6 +1543,12 @@ function SearchPage() {
     }
   };
 
+  const handleSelectSuggestion = (s) => {
+    setValue(s);
+    setShowSuggestions(false);
+    setSelectionMode(true);
+  };
+
   // Function to render search results table
   const renderSearchResults = () => {
     if (!result || !result.data || result.data.length === 0) {
@@ -1347,29 +1558,31 @@ function SearchPage() {
     return (
       <div className={styles.card} style={{ marginTop: 12 }}>
         <div style={{ marginBottom: 12 }}>
-          <h3>Search Results ({result.count} entries found)</h3>
+          <h3>SEARCH RESULTS ({result.count} ENTRIES FOUND)</h3>
         </div>
-        <div className={styles.tableWrap} style={{ overflowX: 'auto', maxHeight: 500, overflowY: 'auto' }}>
+        <div className={styles.tableWrap} style={{ overflowX: 'auto', maxHeight: 450, overflowY: 'auto', overflowX: 'auto' }}>
           <table className={styles.table} style={{ minWidth: '1400px' }}>
             <thead>
               <tr>
-                <th>Pass No</th>
-                <th>Project Name</th>
-                <th>Customer Name</th>
-                <th>Customer Unit Address</th>
-                <th>Customer Location</th>
-                <th>Customer Phone</th>
-                <th>Equipment Type</th>
-                <th>Item Name</th>
-                <th>Part Number</th>
-                <th>Serial Number</th>
-                <th>Defect Details</th>
-                <th>Status</th>
-                <th>Date In</th>
-                <th>Date Out</th>
-                <th>Item Rectification Details</th>
-                <th>Created By</th>
-                <th>Updated By</th>
+                <th>PASS NO</th>
+                <th>PROJECT NAME</th>
+                <th>CUSTOMER NAME</th>
+                <th>CUSTOMER UNIT ADDRESS</th>
+                <th>CUSTOMER LOCATION</th>
+                <th>CUSTOMER PHONE</th>
+                <th>EQUIPMENT TYPE</th>
+                <th>ITEM NAME</th>
+                <th>PART NUMBER</th>
+                <th>SERIAL NUMBER</th>
+                <th>DEFECT DETAILS</th>
+                <th>STATUS</th>
+                <th>DATE IN</th>
+                <th>DATE OUT</th>
+                <th>ITEM RECTIFICATION DETAILS</th>
+                <th>ITEM FEEDBACK 1 DETAILS</th>
+                <th>ITEM FEEDBACK 2 DETAILS</th>
+                <th>CREATED BY</th>
+                <th>UPDATED BY</th>
               </tr>
             </thead>
             <tbody>
@@ -1403,7 +1616,9 @@ function SearchPage() {
                       <td>{status}</td>
                       <td>{dateIn}</td>
                       <td>{dateOut}</td>
-                      <td>{item.itemRectificationDetails || ""}</td>
+                      <td style={{textAlign: 'left'}}>{item.itemRectificationDetails || ""}</td>
+                      <td style={{textAlign: 'left'}}>{item.itemFeedback1Details || ""}</td>
+                      <td style={{textAlign: 'left'}}>{item.itemFeedback2Details || ""}</td>
                       <td>{doc.createdBy || ""}</td>
                       <td>{doc.updatedBy || ""}</td>
                     </tr>
@@ -1420,29 +1635,60 @@ function SearchPage() {
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
-        <div className={styles.pageTitle}>View</div>
+        <div className={styles.pageTitle}>REPORT</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>CLOSE</button>
         </div>
       </div>
       <div className={styles.card}>
         <div className={styles.formGrid3}>
-          <label className={styles.label}>Type
+          <label className={styles.label}>TYPE
             <select
               className={styles.control}
               value={type}
               onChange={(e) => setType(e.target.value)}
             >
-              <option value="PassNo">Private Pass No</option>
-              <option value="ItemPartNo">Part No</option>
-              <option value="ProjectName">Project Name</option>
-              <option value="DateRange">Date Range</option>
+              <option value="passNo">PRIVATE PASS NO</option>
+              <option value="ItemPartNo">PART NO</option>
+              <option value="ProjectName">PROJECT NAME</option>
+              <option value="DateRange">DATE RANGE</option>
             </select>
           </label>
           {type === 'DateRange' ? null : (
-            <label className={styles.label}>Value<input className={styles.control} value={value} onChange={(e) => setValue(e.target.value)} /></label>
+
+            <label className={styles.label}>
+              VALUE
+              <div className={styles.relativeContainer} ref={suggestionRef}>
+                <input
+                  className={styles.control}
+                  value={value}
+                  onFocus={() => setShowSuggestions(true)} // expand again when input is focused
+                  onChange={(e) => setValue(e.target.value)}
+                />
+                {showSuggestions && suggestions.length > 0 && (
+                  <ul className={styles.suggestionsList}>
+                    {suggestions.map((s, i) => (
+                      <li key={i} onClick={() => { handleSelectSuggestion(s); }}>
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </label>
           )}
-          {type != 'PassNo' && (
+          <label className={styles.label}>STATUS
+            <select
+              className={styles.control}
+              value={fstatus}
+              onChange={(e) => setFStatus(e.target.value)}
+            >
+              <option value = "All">ALL</option>
+              <option value = "In">IN</option>
+              <option value = "Out">OUT</option>
+            </select>
+          </label>
+          {type != 'passNo' && (
             <div className={styles.formGrid2}>
               <label className={styles.label}>From<input className={styles.control} type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
               <label className={styles.label}>To<input className={styles.control} type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
@@ -1450,14 +1696,14 @@ function SearchPage() {
           )}
         </div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={runSearch}>View All Records</button>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={download}>Download Report</button>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={runSearch}>VIEW ALL RECORDS</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={download}>DOWNLOAD REPORT</button>
           <button
             type="button"
             className={`${styles.btn} ${styles.btnPrimary} ${styles.resetBtn}`}
             onClick={clearForm}
           >
-            Reset
+            RESET
           </button>
         </div>
         {status ? <div style={{ marginTop: 12 }}>{status}</div> : null}
@@ -1471,11 +1717,165 @@ function SearchPage() {
 
 function EditPage() {
   const [passNo, setPassNo] = useState('');
-  const [doc, setDoc] = useState(null);
+  const [doc, setDoc] = useState({
+    passNo: "",
+    projectName: "",
+    dateIn: "",
+    customer: { name: "", phone: "", unitAddress: "", location: "" },
+    items: []
+  });
+  const [prevData, setPrevData] = useState({
+    passNo: "",
+    projectName: "",
+    dateIn: "",
+    customer: { name: "", phone: "", unitAddress: "", location: "" },
+    items: []
+  }); // To store original data for change detection
+  const [cancel,setCancel] = useState(false);
   const [projectOptions, setProjectOptions] = useState([]);
-  const [itemTypeOptions, setItemTypeOptions] = useState([]);
-  const [itemNameOptions, setItemNameOptions] = useState([]);
-  const [partNoOptions, setPartNoOptions] = useState([]);
+  
+    const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const suggestionRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (suggestionRef.current && !suggestionRef.current.contains(e.target)) {
+        setShowSuggestions(false); // collapse, but keep suggestions in memory
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (passNo.length >= 2) {
+      const fetchSuggestions = async () => {
+        try {
+          const params = new URLSearchParams();
+          params.set('type', 'passNo');
+          params.set('value', passNo);
+          const res = await fetch(`${apiBase()}/search/suggestions?${params.toString()}`, { headers: { ...authHeaders() } });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || 'Failed to fetch suggestions');
+          setSuggestions(data.suggestions || []);
+        }
+        catch (err) {
+          console.error('Error fetching suggestions:', err);
+          setSuggestions([]);
+        }
+      };
+      fetchSuggestions();
+    }
+    else {
+      setSuggestions([]);
+    }
+  }, [passNo]);
+
+
+
+  const prevItemsRef = useRef([]);
+  // Preload dropdown options for each row on first render
+  useEffect(() => {
+    if (!doc?.projectName) return;
+    if (!doc?.items || doc.items.length === 0) return;
+
+    // Run only for newly added rows
+    doc?.items.forEach((row, idx) => {
+      const prevRow = prevItemsRef.current[idx];
+      if (!prevRow || JSON.stringify(prevRow) !== JSON.stringify(row)) {
+        fetchOptionsForRow(row, idx);
+      }
+    });
+    prevItemsRef.current = doc.items;
+  }, [doc?.projectName, doc?.items]);
+
+      // --- API call function ---
+  const fetchItems = async (projectName) => {
+    const res = await fetch(
+      `${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`,
+      { headers: { ...authHeaders() } }
+    );
+    const data = await res.json();
+    return data.items || [];
+  };
+
+  // --- Row update function ---
+  const updateOptionsForRow = (items, row, idx) => {
+    console.log(items, "items fetched");
+
+    // Item Types
+    const typeOptions = [...new Set(items.map(it => it.itemType).filter(Boolean))];
+    updateItem(idx, "itemTypeOptions", typeOptions);
+
+    // Item Names (based on saved equipmentType)
+    if (row.equipmentType) {
+      const nameOptions = [...new Set(
+        items.filter(it => it.itemType === row.equipmentType).map(it => it.itemName).filter(Boolean)
+      )];
+      updateItem(idx, "itemNameOptions", nameOptions);
+    }
+
+    // Part Numbers (based on saved equipmentType + itemName)
+    if (row.equipmentType && row.itemName) {
+      const partOptions = [...new Set(
+        items.filter(it => it.itemType === row.equipmentType && it.itemName === row.itemName)
+            .map(it => it.partNo)
+            .filter(Boolean)
+      )];
+      updateItem(idx, "partNoOptions", partOptions);
+    }
+  };
+
+  // --- Combined function (calls API then updates row) ---
+  const fetchOptionsForRow = async (row, idx) => {
+    const items = await fetchItems(doc.projectName);
+    updateOptionsForRow(items, row, idx);
+  };
+
+
+
+  useEffect(() => {
+    if (cancel) {
+      setDoc(prevData);
+      setCancel(false);
+    }
+  }, [cancel]);
+
+  const fetchItemTypeOptions = async (idx) => {
+    if (!doc?.projectName) return;
+    const res = await fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(doc.projectName)}`, { headers: { ...authHeaders() } });
+    const data = await res.json();
+    const uniqueTypes = [...new Set((data.items || []).map(it => it.itemType).filter(Boolean))];
+    updateItem(idx, 'itemTypeOptions', uniqueTypes);
+  };
+
+  const fetchItemNameOptions = async (idx, equipmentType) => {
+    if (!doc?.projectName || !equipmentType) return;
+    const res = await fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(doc.projectName)}`, { headers: { ...authHeaders() } });
+    const data = await res.json();
+    const names = [...new Set((data.items || [])
+      .filter(it => it.itemType === equipmentType)
+      .map(it => it.itemName)
+      .filter(Boolean)
+    )];
+    updateItem(idx, 'itemNameOptions', names);
+  };
+
+  const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
+    if (!doc?.projectName || !equipmentType || !itemName) return;
+    const res = await fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(doc.projectName)}`, { headers: { ...authHeaders() } });
+    const data = await res.json();
+    const parts = [...new Set((data.items || [])
+      .filter(it => it.itemType === equipmentType && it.itemName === itemName)
+      .map(it => it.partNo)
+      .filter(Boolean)
+    )];
+    updateItem(idx, 'partNoOptions', parts);
+  };
 
     // Duplicate item row (already declared, remove duplicate)
   // Duplicate item row
@@ -1494,34 +1894,19 @@ function EditPage() {
       .then(data => setProjectOptions(data.projects || []));
   }, []);
 
-  // Fetch item type options when doc.projectName changes
-  useEffect(() => {
-    if (!doc?.projectName) return;
-    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(doc.projectName)}`, { headers: { ...authHeaders() } })
-      .then(res => res.json())
-      .then(data => {
-        const types = Array.from(new Set((data.items || []).map(it => it.itemType)));
-        setItemTypeOptions(types);
-      });
-  }, [doc?.projectName]);
-
-  // Fetch item name and part no options when doc.projectName or itemType changes
-  useEffect(() => {
-    if (!doc?.projectName) return;
-    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(doc.projectName)}`, { headers: { ...authHeaders() } })
-      .then(res => res.json())
-      .then(data => {
-        setItemNameOptions(Array.from(new Set((data.items || []).map(it => it.itemName))));
-        setPartNoOptions(Array.from(new Set((data.items || []).map(it => it.partNo))));
-      });
-  }, [doc?.projectName]);
   const [status, setStatus] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const navigate = useNavigate();
 
   const clearForm = () => {
     setPassNo('');
-    setDoc(null);
+    setDoc({
+      passNo: "",
+      projectName: "",
+      dateIn: "",
+      customer: { name: "", phone: "", unitAddress: "", location: "" },
+      items: []
+    });
     setStatus('');
     setIsEditing(false);
   };
@@ -1558,10 +1943,17 @@ function EditPage() {
       console.log('Fetched record data:', data);
       console.log('Items in fetched record:', data.items);
       setDoc(data);
+      setPrevData(data); // Store original data for change detection
       setIsEditing(false); // Reset to readonly mode when fetching new record
     } catch (err) {
       console.error('Error fetching record:', err);
-      setDoc(null);
+      setDoc({
+        passNo: "",
+        projectName: "",
+        dateIn: "",
+        customer: { name: "", phone: "", unitAddress: "", location: "" },
+        items: []
+      });
       setStatus(`Error: ${err.message}`);
     }
   };
@@ -1605,12 +1997,12 @@ function EditPage() {
   };
 
   const addItem = () => {
-    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: 'unit', itemName: '', partNumber: '', serialNumber: '', defectDetails: '', itemIn: true, itemOut: false, dateOut: null, itemRectificationDetails: '' }] }));
+    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: '', itemName: '', partNumber: '', serialNumber: '', defectDetails: '', itemIn: true, itemOut: false, dateOut: null, itemRectificationDetails: '', itemFeedback1Details: '', itemFeedback2Details: ''}] }));
   };
 
   const deleteItem = (idx) => {
-    console.log('Delete item clicked:', idx, 'Total items:', doc.items.length);
-    if (doc.items.length > 1) {
+    console.log('Delete item clicked:', idx, 'Total items:', doc?.items.length);
+    if (doc?.items.length > 1) {
       const confirmDelete = window.confirm('Are you sure you want to delete this item?');
       if (confirmDelete) {
         setDoc((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -1622,24 +2014,30 @@ function EditPage() {
     if (!doc) return;
     
     // Validate required fields
-    if (!doc.customer?.name || doc.customer.name.trim() === '') {
+    if (!doc?.customer?.name || doc?.customer.name.trim() === '') {
       alert('Customer Name is required');
       return;
     }
     
-    if (!doc.customer?.phone || doc.customer.phone.trim() === '') {
+    if (!doc?.customer?.phone || doc?.customer.phone.trim() === '') {
       alert('Customer Phone Number is required');
       return;
     }
     
     // Validate phone number format
-    if (doc.customer?.phone && !validatePhoneNumber(doc.customer.phone)) {
+    if (doc?.customer?.phone && !validatePhoneNumber(doc?.customer.phone)) {
       alert('Please enter a valid 10-digit phone number (e.g., 9876543210)');
       return;
     }
     
+    const itemsWithoutDetails = doc.items.filter(item => item.itemOut && (!item.itemRectificationDetails || item.itemRectificationDetails.trim() === ''));
+    if (itemsWithoutDetails.length > 0) {
+      alert('Please enter rectification details for all items marked as "Item Out"');
+      return;
+    }
+
     // Validate item fields
-    const invalidItems = doc.items.filter(item => 
+    const invalidItems = doc?.items.filter(item => 
       !item.itemName || item.itemName.trim() === '' ||
       !item.partNumber || item.partNumber.trim() === '' ||
       !item.serialNumber || item.serialNumber.trim() === ''
@@ -1658,8 +2056,8 @@ function EditPage() {
     
     setStatus('');
     try {
-      const payload = { dateIn: doc.dateIn, customer: doc.customer, projectName: doc.projectName, items: doc.items };
-      const res = await fetch(`${apiBase()}/items/${encodeURIComponent(doc.passNo)}`, {
+      const payload = { dateIn: doc?.dateIn, customer: doc?.customer, projectName: doc?.projectName, items: doc?.items };
+      const res = await fetch(`${apiBase()}/items/${encodeURIComponent(doc?.passNo)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -1683,7 +2081,7 @@ function EditPage() {
     
     setStatus('');
     try {
-      const res = await fetch(`${apiBase()}/items/${encodeURIComponent(doc.passNo)}`, { method: 'DELETE', headers: { ...authHeaders() } });
+      const res = await fetch(`${apiBase()}/items/${encodeURIComponent(doc?.passNo)}`, { method: 'DELETE', headers: { ...authHeaders() } });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed');
       
@@ -1697,93 +2095,128 @@ function EditPage() {
   };
 
   return (
-    <div className={styles.page} style={{ height: 'calc(100vh - 120px)', overflow: 'auto' }}>
+    <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
       <div className={styles.pageHeader}>
-        <div className={styles.pageTitle}>Edit/View</div>
+        <div className={styles.pageTitle}>EDIT/VIEW</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>Close</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/dashboard'); clearForm()}}>CLOSE</button>
         </div>
       </div>
       <div className={styles.card}>
         <div className={styles.formRow}>
-          <label className={styles.label}>Private Pass No<input className={styles.control} placeholder="Pass No" value={passNo} onChange={(e) => setPassNo(e.target.value)} /></label>
+          <label className={styles.label}>
+            PRIVATE PASS NO
+            <div className={styles.relativeContainer} ref={suggestionRef}>
+              <input 
+                className={styles.control} 
+                placeholder="PASS NO" 
+                value={passNo} 
+                onChange={(e) => setPassNo(e.target.value)}
+                onFocus={() => setShowSuggestions(true)} // expand again when input is focused 
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className={styles.suggestionsList}>
+                  {suggestions.map((s, i) => (
+                    <li key={i} onClick={() => { setPassNo(s); setShowSuggestions(false); }}>
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </label>
           <div className={styles.pageActions}>
-            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchDoc}>Display</button>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchDoc}>DISPLAY</button>
           </div>
         </div>
       </div>
-      {doc ? (
-        <div className={styles.card} style={{ marginTop: 12 }}>
+      {doc?.projectName ? (
+        <div className={styles.cardEdit} style={{ marginTop: 12 }}>
           <div className={styles.pageActions} style={{ marginBottom: 16 }}>
             {!isEditing ? (
               <>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setIsEditing(true)}>Edit</button>
-                <button className={`${styles.btn} ${styles.btnDanger}`} onClick={deleteRecord}>Delete</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setIsEditing(true)}>EDIT</button>
+                <button className={`${styles.btn} ${styles.btnDanger}`} onClick={deleteRecord}>DELETE</button>
               </>
             ) : (
               <>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={submitChanges}>Save Changes</button>
-                <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setIsEditing(false)}>Cancel</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={submitChanges}>SAVE CHANGES</button>
+                <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {setIsEditing(false); setCancel(true);}}>CANCEL</button>
               </>
             )}
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); if (isEditing) submitChanges(); }} className={styles.form}>
+          <form onSubmit={(e) => { e.preventDefault(); if (isEditing) submitChanges(); }} className={`${styles.form} ${isEditing ? "" : styles.freeze}`}>
             <div className={styles.formGrid2}>
-              <label className={styles.label}>Private Pass No<input className={styles.control} value={doc.passNo || ''} readOnly /></label>
-              <label className={styles.label}>Date In<input className={styles.control} type="date" value={doc.dateIn || ''} onChange={(e) => updateDocField('dateIn', e.target.value)} readOnly={!isEditing} /></label>
-              <label className={styles.label}>Project Name
-                <select className={styles.control} value={doc.projectName || ''} onChange={e => updateDocField('projectName', e.target.value)} disabled={!isEditing} required>
-                  <option value="">Select Project</option>
+              <label className={styles.label}>PRIVATE PASS NO<input className={styles.control} value={doc.passNo || ''} readOnly /></label>
+              <label className={styles.label}>DATE IN<input className={styles.control} type="date" value={doc.dateIn || ''} onChange={(e) => updateDocField('dateIn', e.target.value)} readOnly={!isEditing} /></label>
+              <label className={`${styles.label} ${styles.freeze}`}>PROJECT NAME
+                <select className={styles.control} value={doc?.projectName || ''} onChange={e => updateDocField('projectName', e.target.value)} disabled={!isEditing} required>
+                  <option value="">SELECT PROJECT</option>
                   {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
                 </select>
               </label>
-              <label className={styles.label}>Customer Name<input className={styles.control} value={doc.customer?.name || ''} onChange={(e) => updateDocField('customer.name', e.target.value)} readOnly={!isEditing} required /></label>
-              <label className={styles.label}>Customer Unit Address<input className={styles.control} value={doc.customer?.unitAddress || ''} onChange={(e) => updateDocField('customer.unitAddress', e.target.value)} readOnly={!isEditing} /></label>
-              <label className={styles.label}>Customer Location<input className={styles.control} value={doc.customer?.location || ''} onChange={(e) => updateDocField('customer.location', e.target.value)} readOnly={!isEditing} /></label>
+              <label className={styles.label}>CUSTOMER NAME<input className={styles.control} value={doc.customer?.name || ''} onChange={(e) => updateDocField('customer.name', e.target.value)} readOnly={!isEditing} required /></label>
+              <label className={styles.label}>CUSTOMER UNIT ADDRESS<input className={styles.control} value={doc.customer?.unitAddress || ''} onChange={(e) => updateDocField('customer.unitAddress', e.target.value)} readOnly={!isEditing} /></label>
+              <label className={styles.label}>CUSTOMER LOCATION<input className={styles.control} value={doc.customer?.location || ''} onChange={(e) => updateDocField('customer.location', e.target.value)} readOnly={!isEditing} /></label>
               <label className={styles.label}>
-                Customer Phone No
+                CUSTOMER PHONE NO
                 <input 
                   className={styles.control} 
                   value={doc.customer?.phone || ''} 
                   onChange={(e) => updateDocField('customer.phone', e.target.value)}
-                  placeholder="Enter 10-digit number (e.g., 9876543210)"
+                  placeholder="ENTER 10-DIGIT NUMBER (E.G., 9876543210)"
                   readOnly={!isEditing}
                   required
                 />
                 {doc.customer?.phone && !validatePhoneNumber(doc.customer.phone) && (
                   <div style={{ color: '#ff6b6b', fontSize: '0.75rem', marginTop: '2px' }}>
-                    Please enter a valid 10-digit phone number
+                    PLEASE ENTER A VALID 10-DIGIT PHONE NUMBER
                   </div>
                 )}
               </label>
             </div>
-            <div className={styles.tableWrap} style={{ marginTop: 8, overflowX: 'auto', maxHeight: 350, overflowY: 'auto' }}>
+            <div className={styles.tableWrap} style={{ marginTop: 8, overflowX: 'auto', maxHeight: 350, overflowY: 'auto', overflowX: 'auto' }}>
               <table className={styles.table} style={{ minWidth: '1200px' }}>
                 <thead>
                   <tr>
-                    <th>Item Type</th><th>Item Name</th><th>Part No</th><th>Serial No</th><th>Defect</th><th>ItemOut</th><th>Date Out</th><th>Rectification Details</th>
+                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>FEEDBACK 1 DETAILS</th><th>FEEDBACK 2 DETAILS</th>
                     {isEditing && <th style={{ minWidth: '100px', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {doc.items?.map((it, idx) => (
+                  {doc?.items?.map((it, idx) => (
                     <tr key={idx}>
                       <td>
-                        <select className={styles.control} value={it.equipmentType || ''} onChange={e => updateItem(idx, 'equipmentType', e.target.value)} disabled={!isEditing} required>
-                          <option value="">Select Type</option>
-                          {itemTypeOptions.map((type, i) => <option key={i} value={type}>{type}</option>)}
+                        <select
+                          className={styles.control}
+                          value={it.equipmentType || ''}
+                          onFocus={() => fetchItemTypeOptions(idx)}
+                          onChange={e => updateItem(idx, 'equipmentType', e.target.value)}
+                        >
+                          <option value="">SELECT TYPE</option>
+                          {it.itemTypeOptions?.map((t, i) => <option key={i} value={t}>{t}</option>)}
                         </select>
                       </td>
                       <td>
-                        <select className={styles.control} value={it.itemName || ''} onChange={e => updateItem(idx, 'itemName', e.target.value)} disabled={!isEditing} required>
-                          <option value="">Select Item Name</option>
-                          {itemNameOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
+                        <select
+                          className={styles.control}
+                          value={it.itemName || ''}
+                          onFocus={() => fetchItemNameOptions(idx, it.equipmentType)}
+                          onChange={e => updateItem(idx, 'itemName', e.target.value)}
+                        >
+                          <option value="">SELECT NAME</option>
+                          {it.itemNameOptions?.map((n, i) => <option key={i} value={n}>{n}</option>)}
                         </select>
                       </td>
                       <td>
-                        <select className={styles.control} value={it.partNumber || ''} onChange={e => updateItem(idx, 'partNumber', e.target.value)} disabled={!isEditing} required>
-                          <option value="">Select Part No</option>
-                          {partNoOptions.map((no, i) => <option key={i} value={no}>{no}</option>)}
+                        <select
+                          className={styles.control}
+                          value={it.partNumber || ''}
+                          onFocus={() => fetchPartNoOptions(idx, it.equipmentType, it.itemName)}
+                          onChange={e => updateItem(idx, 'partNumber', e.target.value)}
+                        >
+                          <option value="">SELECT PART</option>
+                          {it.partNoOptions?.map((p, i) => <option key={i} value={p}>{p}</option>)}
                         </select>
                       </td>
                       <td><input className={styles.control} value={it.serialNumber || ''} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} readOnly={!isEditing} required /></td>
@@ -1797,18 +2230,51 @@ function EditPage() {
                           onChange={(e) => updateItem(idx, 'dateOut', e.target.value)}
                           readOnly={!isEditing}
                         />
-                        {!it.dateOut && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>No date set</div>}
-                        {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ Date required for Item Out</div>}
+                        {!it.dateOut && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
+                        {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
                       </td>
                       <td>
-                        <input 
-                          type="text" 
-                          className={styles.control} 
-                          placeholder="Rectification details"
-                          value={it.itemRectificationDetails || ''} 
-                          onChange={(e) => updateItem(idx, 'itemRectificationDetails', e.target.value)}
-                          readOnly={!isEditing}
-                        />
+                          <textarea
+                            className={styles.control}
+                            placeholder="RECTIFICATION DETAILS"
+                            value={it.itemRectificationDetails || ""}
+                            onChange={(e) => updateItem(idx, 'itemRectificationDetails', e.target.value)}
+                            readOnly={!isEditing}
+                            rows={1} // looks like an input initially
+                          />
+                          {it.itemOut &&
+                            (!it.itemRectificationDetails ||
+                              it.itemRectificationDetails.trim() === "") && (
+                              <div
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "#ff6b6b",
+                                  marginTop: "2px",
+                                }}
+                              >
+                                ⚠️ Rectification details required for Item Out
+                              </div>
+                          )}
+                      </td>
+                      <td>
+                        <textarea
+                            className={styles.control}
+                            placeholder="FEEDBACK DETAILS 1"
+                            value={it.itemFeedback1Details || ""}
+                            onChange={(e) => updateItem(idx, 'itemFeedback1Details', e.target.value)}
+                            readOnly={!isEditing}
+                            rows={1} // looks like an input initially
+                          />
+                      </td>
+                      <td>
+                        <textarea
+                            className={styles.control}
+                            placeholder="FEEDBACK DETAILS 2"
+                            value={it.itemFeedback2Details || ""}
+                            onChange={(e) => updateItem(idx, 'itemFeedback2Details', e.target.value)}
+                            readOnly={!isEditing}
+                            rows={1} // looks like an input initially
+                          />
                       </td>
                       {isEditing && (
                         <td style={{ textAlign: 'center', minWidth: '100px', whiteSpace: 'nowrap' }}>
@@ -1818,16 +2284,16 @@ function EditPage() {
                             onClick={() => duplicateItem(idx)} 
                             style={{ fontSize: '0.85rem', padding: '6px 12px', marginRight: 4 }}
                           >
-                            Duplicate
+                            DUPLICATE
                           </button>
                           <button 
                             type="button" 
                             className={`${styles.btn} ${styles.btnDanger}`} 
                             onClick={() => deleteItem(idx)} 
-                            disabled={doc.items.length === 1}
+                            disabled={doc?.items.length === 1}
                             style={{ fontSize: '0.85rem', padding: '6px 12px' }}
                           >
-                            Delete
+                            DELETE
                           </button>
                         </td>
                       )}
@@ -1837,14 +2303,14 @@ function EditPage() {
               </table>
               {isEditing && (
                 <div style={{ marginTop: 8 }}>
-                  <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={addItem}>Add Item</button>
+                  <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={addItem}>ADD ITEM</button>
                 </div>
               )}
             </div>
             {status ? <div style={{ marginTop: 12 }}>{status}</div> : null}
           </form>
         </div>
-      ) : null}
+      ) : <div className = {styles.errMsg}>{status}</div>}
     </div>
   );
 }

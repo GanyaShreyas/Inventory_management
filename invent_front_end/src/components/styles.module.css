@@ -1,3 +1,71 @@
+/* CSS Reset & Box Sizing for cross-browser consistency */
+:global(html), :global(body), :global(#root) {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  /* font-family: inherit; */
+}
+
+:global(*), :global(*::before), :global(*::after) {
+  box-sizing: inherit;
+}
+
+:global(body) {
+  overflow-x: hidden;
+  background: #f8fafc;
+}
+/* Use this wrapper around input + suggestionsList for correct dropdown positioning */
+.relativeContainer {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+/* Suggestions dropdown for SearchPage */
+
+.suggestionsList {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #cfe4f3;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 8px 24px rgba(15,110,177,0.13);
+  margin-top: -2px;
+  padding: 0;
+  list-style: none;
+  min-width: 100%;
+  max-width: 340px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 0.98rem;
+}
+
+
+.suggestionsList li {
+  padding: 10px 16px;
+  cursor: pointer;
+  color: #0f2233;
+  transition: background 0.18s, color 0.18s;
+  position: relative;
+}
+
+
+.suggestionsList li:hover,
+.suggestionsList li.active {
+  background: #eaf6fd;
+  color: #0f6eb1;
+}
+
+.relativeContainer input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+
 .profileContainer {
   background-color: transparent;
   padding: 8px;
@@ -215,7 +283,7 @@
   flex-direction: column;
   min-width: 0;
   height: 100vh;
-  overflow: hidden;
+  overflow-y: auto;
   animation: fadeInMain 0.5s ease;
 }
 
@@ -442,6 +510,8 @@
 /* Premium layout additions */
 .page {
   padding: 24px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .pageHeader {
@@ -463,6 +533,30 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 16px;
+}
+
+.cardEdit {
+  zoom: 0.7;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12);
+  padding: 18px;
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+
+.cardItemOut {
+  zoom: 0.8;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12);
+  padding: 18px;
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+
+.freeze{
+  opacity: 0.8;
+  pointer-events: none;
+  cursor: Not-allowed;
 }
 
 .card {
@@ -506,8 +600,8 @@
 
 .tableWrap { background: #fff; border-radius: 12px; box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12); overflow: hidden; }
 .table { width: 100%; border-collapse: collapse; font-size: .95rem; }
-.table thead th { background: #f6f8fa; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
-.table tbody td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; }
+.table thead th { background: #f6f8fa; text-align: center; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
+.table tbody td { text-align: center; padding: 10px 12px; border-bottom: 1px solid #eef2f7; }
 .table tbody tr:hover { background: #fafcff; }
 
 .loginWrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px; background: linear-gradient(120deg, #e6f2fb, #f2f6fb); }
@@ -517,3 +611,27 @@
 
 .pill { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: #eaf6fd; color: #0f6eb1; font-weight: 700; font-size: .8rem; }
 
+.errMsg {
+  color: red;
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.textarea.control {
+  display: inline-block;
+  vertical-align: middle;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: normal;
+  text-align: left;
+
+  /* Force same size as input */
+  height: 32px;       /* match your input’s height */
+  min-height: 32px;   /* prevents taller expansion initially */
+  max-height: 120px;  /* let user expand manually */
+  resize: vertical;   /* only vertical resizing allowed */
+
+  /* Box sizing consistency */
+  padding: 6px 8px;   /* same as input */
+  box-sizing: border-box;
+}

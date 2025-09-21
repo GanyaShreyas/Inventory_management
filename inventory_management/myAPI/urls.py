@@ -16,6 +16,7 @@ urlpatterns = [
     # search
     path('search', views.search),  # GET /api/search
     path('search/download', views.search_download),  # GET /api/search/download
+    path('search/suggestions', views.search_suggestions),  # GET /api/search/suggestions
 
     # Admin Projects
     path('admin/projects/add', views.admin_add_project),  # POST /api/admin/projects/add

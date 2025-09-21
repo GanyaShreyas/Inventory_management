@@ -38,7 +38,7 @@ function Header() {
   return(
     <div className={styles.profileComp}>
       <div className={styles.headerBanner}>
-        <div className={styles.bannerTitle}>Customer Support-MILCOM</div>
+        <div className={styles.bannerTitle}>CUSTOMER SUPPORT-MILCOM</div>
         <div className={styles.bannerSubtitle}>Efficient. Reliable. Secure.</div>
       </div>
       <div className={styles.profileContainer}>  
@@ -46,8 +46,8 @@ function Header() {
                          className={styles.userImg} src = {userImg} alt="User" />
           <div style={{ display: profileOpen ? 'block' : 'none' }}>
             <div className={styles.profileChild}>
-              <div>User: {username}</div>
-              <button onClick={onLogout}>Logout</button>
+              <div>USER: {username}</div>
+              <button onClick={onLogout}>LOGOUT</button>
             </div>
           </div>
       </div>
