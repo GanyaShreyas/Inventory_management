@@ -71,8 +71,6 @@ def admin_add_item(request):
             "projectName": project_name,
             "items": {
                 "$elemMatch": {
-                    "itemType": item_type,
-                    "itemName": item_name,
                     "partNo": part_no
                 }
             }
