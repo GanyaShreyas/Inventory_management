@@ -780,6 +780,7 @@ def search(request):
         docs = list(collection.find(query))
 
         results = []
+        serial_no = 1
         search_type = params.get("type")
         search_value = params.get("value")
         status = params.get("status")  # "In" or "Out"
@@ -791,6 +792,10 @@ def search(request):
                 filtered_items = _filter_items(filtered_items, part_number=search_value, status=status)
             elif status in ("In", "Out"):
                 filtered_items = _filter_items(filtered_items, status=status)
+
+            for item in filtered_items:
+                item["serialNo"] = serial_no
+                serial_no += 1
 
             doc = {**doc, "items": filtered_items}
             results.append(_shape_search_result({**doc, "_id": None}))
@@ -817,6 +822,7 @@ def search_download(request):
         return err
 
     try:
+        serial_no = 1
         params = request.GET
         query = _build_search_query(params)
         docs = list(collection.find(query))
@@ -827,7 +833,7 @@ def search_download(request):
         
         # Write header row
         writer.writerow([
-            "Pass No", "Project Name", 
+            "Sl No.","Pass No", "Project Name", 
             "Customer Name", "Customer Unit Address", "Customer Location", "Customer Phone",
             "Equipment Type", "Item Name", "Part Number", "Serial Number", "Defect Details", 
             "Status", "Date In", "Date Out", "Item Rectification Details", "Feedback 1 details", "Feedback 2 details", "CreatedBy", "updatedBy"
@@ -876,6 +882,7 @@ def search_download(request):
                         date_out = ""
                 
                 writer.writerow([
+                    serial_no,
                     pass_no,
                     project_name,
                     customer.get("name", ""),
@@ -896,6 +903,7 @@ def search_download(request):
                     createdBy,
                     updatedBy
                 ])
+                serial_no += 1
 
         csv_content = output.getvalue()
         output.close()

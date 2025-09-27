@@ -600,7 +600,15 @@
 
 .tableWrap { background: #fff; border-radius: 12px; box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12); overflow: hidden; }
 .table { width: 100%; border-collapse: collapse; font-size: .95rem; }
-.table thead th { background: #f6f8fa; text-align: center; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
+.table thead th {
+  background: #f6f8fa;
+  text-align: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 .table tbody td { text-align: center; padding: 10px 12px; border-bottom: 1px solid #eef2f7; }
 .table tbody tr:hover { background: #fafcff; }
 

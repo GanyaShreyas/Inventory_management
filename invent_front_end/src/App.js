@@ -161,14 +161,14 @@ function AdminDashboard() {
           </div>
           <div className={styles.cardGrid}>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>ADD USERS</div>
-              <div className={styles.cardDesc}>CREATE NEW USERS.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/add-user">OPEN</Link>
-            </div>
-            <div className={styles.card}>
               <div className={styles.cardTitle}>MANAGE PROJECTS</div>
               <div className={styles.cardDesc}>ADD NEW PROJECTS OR MANAGE EXISTING PROJECTS.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/manage-projects">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>ADD USERS</div>
+              <div className={styles.cardDesc}>CREATE NEW USERS.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/add-user">OPEN</Link>
             </div>
           </div>
         </div>
@@ -396,13 +396,35 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
 
     // Duplicate item row (already declared, remove duplicate)
   // Duplicate item row
+  // const duplicateItem = (idx) => {
+  //   setItems((prev) => {
+  //     const copy = [...prev];
+  //     copy.splice(idx + 1, 0, { ...prev[idx] });
+  //     return copy;
+  //   });
+  // };
   const duplicateItem = (idx) => {
-    setItems((prev) => {
+    setItems(prev => {
       const copy = [...prev];
-      copy.splice(idx + 1, 0, { ...prev[idx] });
+      const src = prev[idx] || {};
+
+      const newRow = {
+        equipmentType: src.equipmentType || '',
+        itemName: src.itemName || '',
+        partNumber: src.partNumber || '',
+        serialNumber: '',            // keep blank (or use src.serialNumber to copy)
+        defectDetails: '',          // keep blank (or copy)
+        itemTypeOptions: Array.isArray(src.itemTypeOptions) ? [...src.itemTypeOptions] : [],
+        itemNameOptions: Array.isArray(src.itemNameOptions) ? [...src.itemNameOptions] : [],
+        partNoOptions: Array.isArray(src.partNoOptions) ? [...src.partNoOptions] : []
+      };
+
+      copy.splice(idx + 1, 0, newRow);
       return copy;
     });
   };
+
+
   const [status, setStatus] = useState('');
   const navigate = useNavigate();
 
@@ -665,7 +687,6 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
                       <td>
                         <textarea
                           className={styles.control}
-                          placeholder="DEFECT DETAILS"
                           value={it.defectDetails}
                           onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)}
                           rows={1} // looks like an input initially
@@ -952,7 +973,7 @@ function ItemOutPage() {
             <table className={styles.table} style={{ minWidth: 900 }}>
               <thead>
                 <tr>
-                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>FEEDBACK 1</th><th>FEEDBACK 2</th>
+                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1</th><th>REMARKS 2</th>
                 </tr>
               </thead>
               <tbody>
@@ -979,7 +1000,6 @@ function ItemOutPage() {
                     <td>
                       <textarea
                         className={styles.control}
-                        placeholder="RECTIFICATION DETAILS"
                         value={it.itemRectificationDetails || ""}
                         onChange={(e) => updateRectificationDetails(idx, e.target.value)}
                         required={it.itemOut}
@@ -1002,7 +1022,6 @@ function ItemOutPage() {
                     <td>
                       <textarea
                         className={styles.control}
-                        placeholder="FEEDBACK 1 DETAILS"
                         value={it.itemFeedback1Details || ""}
                         onChange={(e) => updateFeedback1Details(idx, e.target.value)}
                         rows={1} // looks like an input initially
@@ -1011,7 +1030,6 @@ function ItemOutPage() {
                     <td>
                       <textarea
                         className={styles.control}
-                        placeholder="FEEDBACK 2 DETAILS"
                         value={it.itemFeedback2Details || ""}
                         onChange={(e) => updateFeedback2Details(idx, e.target.value)}
                         rows={1} // looks like an input initially
@@ -1053,6 +1071,11 @@ function ManageProjects() {
   // Add item data state for Select Project page (move hooks to very top)
   const [newItem, setNewItem] = React.useState({ itemType: '', itemName: '', partNo: '' });
   const [addItemStatus, setAddItemStatus] = React.useState('');
+    React.useEffect(() => {
+    if (mode === 'list') {
+      fetchProjects();
+    }
+  }, [mode]);
 
   const clearForm = () => {
       setMode('');
@@ -1201,8 +1224,9 @@ function ManageProjects() {
             </div>
             <div className={styles.card} style={{ maxWidth: 500, margin: '0 auto', padding: 32 }}>
               <div className={styles.buttonGroup} style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setMode('add')}>ADD PROJECT</button>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => { setMode('select'); fetchProjects(); }}>SELECT PROJECT</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setMode('add')}>ADD NEW PROJECT</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => { setMode('select'); fetchProjects(); }}>EDIT PROJECT</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => { setMode('list'); fetchProjects(); }}>LIST PROJECT</button>
               </div>
             </div>
           </div>
@@ -1327,7 +1351,7 @@ function ManageProjects() {
               {selectStatus && <div style={{ color: '#b91c1c', marginBottom: 12 }}>{selectStatus}</div>}
               {selectedProject && (
                 <div>
-                  <h3 style={{ marginTop: 24 }}>ITEMS FOR {selectedProject}</h3>
+                  <h3 style={{ marginTop: 24 }}>ITEMS OF PROJECT {selectedProject}</h3>
                   <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto', overflowX: 'auto'}}>
                     <table className={styles.table} style={{ minWidth: 600 }}>
                       <thead>
@@ -1409,6 +1433,64 @@ function ManageProjects() {
     );
   }
 
+  if (mode === 'list') {
+    // CSV download handler
+    const handleDownloadCSV = () => {
+      if (!projects || projects.length === 0) return;
+      const header = ['SERIAL NO.', 'PROJECT NAME'];
+      // Properly quote and escape all project names, and ensure all are included
+      const rows = projects.map((proj, idx) => [
+        idx + 1,
+        '"' + String(proj).replace(/"/g, '""') + '"'
+      ]);
+      let csvContent = header.join(',') + '\n';
+      csvContent += rows.map(r => r.join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'project_list.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    return (
+      <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+        <div className={styles.pageHeader}>
+          <div className={styles.pageTitle}>PROJECT LIST</div>
+          <div className={styles.pageActions}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={handleDownloadCSV}>DOWNLOAD CSV</button>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setMode('')}>CLOSE</button>
+          </div>
+        </div>
+        <div className={styles.card} style={{ maxHeight: '750px', overflowY: 'auto' }}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>SERIAL NO.</th>
+                <th>PROJECT NAME</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.length === 0 ? (
+                <tr><td colSpan={2}>No projects found.</td></tr>
+              ) : (
+                projects.map((proj, idx) => (
+                  <tr key={idx}>
+                    <td>{idx + 1}</td>
+                    <td>{proj}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -1424,7 +1506,7 @@ function SearchPage() {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
-
+  const [projectOptions, setProjectOptions] = useState([]);
   const suggestionRef = useRef(null);
 
   useEffect(() => {
@@ -1484,6 +1566,13 @@ function SearchPage() {
     setSuggestions([]);
     setShowSuggestions(false);
   };
+
+  const clearOnChange = () =>{
+    setValue('');
+    setFrom('');
+    setTo('');
+    setFStatus('All');
+  }
 
   const runSearch = async () => {
     setStatus('');
@@ -1549,6 +1638,12 @@ function SearchPage() {
     setSelectionMode(true);
   };
 
+  const fetchProjects = async () => {
+    const res = await fetch(`${apiBase()}/admin/projects/list`, { headers: { ...authHeaders() } });
+    const data = await res.json();
+    setProjectOptions(data.projects || []);
+  };
+
   // Function to render search results table
   const renderSearchResults = () => {
     if (!result || !result.data || result.data.length === 0) {
@@ -1564,6 +1659,7 @@ function SearchPage() {
           <table className={styles.table} style={{ minWidth: '1400px' }}>
             <thead>
               <tr>
+                <th>SL NO.</th>
                 <th>PASS NO</th>
                 <th>PROJECT NAME</th>
                 <th>CUSTOMER NAME</th>
@@ -1578,9 +1674,9 @@ function SearchPage() {
                 <th>STATUS</th>
                 <th>DATE IN</th>
                 <th>DATE OUT</th>
-                <th>ITEM RECTIFICATION DETAILS</th>
-                <th>ITEM FEEDBACK 1 DETAILS</th>
-                <th>ITEM FEEDBACK 2 DETAILS</th>
+                <th>RECTIFICATION DETAILS</th>
+                <th>REMARKS 1 </th>
+                <th>REMARKS 2 </th>
                 <th>CREATED BY</th>
                 <th>UPDATED BY</th>
               </tr>
@@ -1602,6 +1698,7 @@ function SearchPage() {
                   
                   return (
                     <tr key={`${docIndex}-${itemIndex}`}>
+                      <td>{item.serialNo || ""}</td>
                       <td>{doc.passNo || ""}</td>
                       <td>{doc.projectName || ""}</td>
                       <td>{doc.customer?.name || ""}</td>
@@ -1646,7 +1743,7 @@ function SearchPage() {
             <select
               className={styles.control}
               value={type}
-              onChange={(e) => setType(e.target.value)}
+              onChange={(e) => {setType(e.target.value); clearOnChange();}}
             >
               <option value="passNo">PRIVATE PASS NO</option>
               <option value="ItemPartNo">PART NO</option>
@@ -1657,24 +1754,35 @@ function SearchPage() {
           {type === 'DateRange' ? null : (
 
             <label className={styles.label}>
-              VALUE
-              <div className={styles.relativeContainer} ref={suggestionRef}>
-                <input
-                  className={styles.control}
-                  value={value}
-                  onFocus={() => setShowSuggestions(true)} // expand again when input is focused
-                  onChange={(e) => setValue(e.target.value)}
-                />
-                {showSuggestions && suggestions.length > 0 && (
-                  <ul className={styles.suggestionsList}>
-                    {suggestions.map((s, i) => (
-                      <li key={i} onClick={() => { handleSelectSuggestion(s); }}>
-                        {s}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              {type === 'passNo' ? 'PRIVATE PASS NO' : type === 'ItemPartNo' ? 'PART NO' : 'PROJECT NAME'}
+              {type === 'ProjectName' ?
+                <select 
+                  className={styles.control} 
+                  value={value} 
+                  onChange={(e) => {setValue(e.target.value)}}
+                  onFocus={fetchProjects} required>
+                  <option value="">SELECT PROJECT</option>
+                  {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
+                </select>
+                :
+                <div className={styles.relativeContainer} ref={suggestionRef}>
+                  <input
+                    className={styles.control}
+                    value={value}
+                    onFocus={() => setShowSuggestions(true)} // expand again when input is focused
+                    onChange={(e) => setValue(e.target.value)}
+                  />
+                  {showSuggestions && suggestions.length > 0 && (
+                    <ul className={styles.suggestionsList}>
+                      {suggestions.map((s, i) => (
+                        <li key={i} onClick={() => { handleSelectSuggestion(s); }}>
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              }
             </label>
           )}
           <label className={styles.label}>STATUS
@@ -1710,7 +1818,25 @@ function SearchPage() {
       </div>
       
       {/* Display search results table */}
-      {renderSearchResults()}
+      {/* {renderSearchResults()} */}
+      {result && result.data && result.data.length > 0 ? (
+        renderSearchResults()
+      ) : (
+        <div
+          className={styles.card}
+          style={{
+            marginTop: 12,
+            minHeight: "600px", // enough height to mimic the table area
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#888",
+          }}
+        >
+          {/* Optional placeholder text */}
+          <span>No records loaded yet</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1879,13 +2005,37 @@ function EditPage() {
 
     // Duplicate item row (already declared, remove duplicate)
   // Duplicate item row
+  // const duplicateItem = (idx) => {
+  //   setDoc((prev) => {
+  //     const copy = [...prev];
+  //     copy.splice(idx + 1, 0, { ...prev[idx] });
+  //     return copy;
+  //   });
+  // };
   const duplicateItem = (idx) => {
-    setDoc((prev) => {
-      const copy = [...prev];
-      copy.splice(idx + 1, 0, { ...prev[idx] });
-      return copy;
-    });
-  };
+  setDoc(prev => {
+    const items = prev.items || [];
+    const src = items[idx] || {};
+
+    const newRow = {
+      equipmentType: src.equipmentType || '',
+      itemName: src.itemName || '',
+      partNumber: src.partNumber || '',
+      serialNumber: '',
+      defectDetails: '',
+      itemTypeOptions: [],
+      itemNameOptions: [],
+      partNoOptions: [],
+      itemIn: src.itemIn ?? true,
+      itemOut: false,
+      dateOut: null
+    };
+
+    const newItems = [...items.slice(0, idx + 1), newRow, ...items.slice(idx + 1)];
+    return { ...prev, items: newItems };
+  });
+};
+
 
   // Fetch project options on mount
   useEffect(() => {
@@ -2179,7 +2329,7 @@ function EditPage() {
               <table className={styles.table} style={{ minWidth: '1200px' }}>
                 <thead>
                   <tr>
-                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>FEEDBACK 1 DETAILS</th><th>FEEDBACK 2 DETAILS</th>
+                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1 DETAILS</th><th>REMARKS 2 DETAILS</th>
                     {isEditing && <th style={{ minWidth: '100px', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
@@ -2236,7 +2386,6 @@ function EditPage() {
                       <td>
                           <textarea
                             className={styles.control}
-                            placeholder="RECTIFICATION DETAILS"
                             value={it.itemRectificationDetails || ""}
                             onChange={(e) => updateItem(idx, 'itemRectificationDetails', e.target.value)}
                             readOnly={!isEditing}
@@ -2259,7 +2408,6 @@ function EditPage() {
                       <td>
                         <textarea
                             className={styles.control}
-                            placeholder="FEEDBACK DETAILS 1"
                             value={it.itemFeedback1Details || ""}
                             onChange={(e) => updateItem(idx, 'itemFeedback1Details', e.target.value)}
                             readOnly={!isEditing}
@@ -2269,7 +2417,6 @@ function EditPage() {
                       <td>
                         <textarea
                             className={styles.control}
-                            placeholder="FEEDBACK DETAILS 2"
                             value={it.itemFeedback2Details || ""}
                             onChange={(e) => updateItem(idx, 'itemFeedback2Details', e.target.value)}
                             readOnly={!isEditing}
