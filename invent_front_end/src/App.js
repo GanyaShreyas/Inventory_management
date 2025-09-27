@@ -240,7 +240,7 @@ function AdminAddUserPage() {
       // Call logout endpoint to invalidate session on server
       const token = sessionStorage.getItem('token') || localStorage.getItem('token');
       if (token) {
-        await fetch('http://localhost:8000/api/logout', {
+        await fetch(`${apiBase()}//logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -1098,7 +1098,7 @@ function ManageProjects() {
       return;
     }
     try {
-      const res = await fetch('http://localhost:8000/api/admin/projects/add', {
+      const res = await fetch(`${apiBase()}/admin/projects/add`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ projectName })
@@ -1115,13 +1115,14 @@ function ManageProjects() {
   alert('Project created successfully! You can now add items.');
   setAddStatus('Project created. You can now add items.');
     } catch (err) {
+      alert(err.message);
       setAddStatus(err.message);
     }
   };
   const fetchProjects = async () => {
     setSelectStatus('');
     try {
-      const res = await fetch('http://localhost:8000/api/admin/projects/list', {
+      const res = await fetch(`${apiBase()}/admin/projects/list`, {
         headers: { ...authHeaders() }
       });
       const data = await res.json();
@@ -1135,7 +1136,7 @@ function ManageProjects() {
   const fetchProjectItems = async (projectName) => {
     setSelectStatus('');
     try {
-      const res = await fetch(`http://localhost:8000/api/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, {
+      const res = await fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(projectName)}`, {
         headers: { ...authHeaders() }
       });
       const data = await res.json();
@@ -1164,7 +1165,7 @@ function ManageProjects() {
     // Get the original item for lookup
     const originalItem = projectItems[editIdx];
     try {
-      const res = await fetch('http://localhost:8000/api/admin/projects/items/edit', {
+      const res = await fetch(`${apiBase()}/admin/projects/items/edit`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
@@ -1190,7 +1191,7 @@ function ManageProjects() {
     const item = projectItems[idx];
     if (!window.confirm('Delete this item?')) return;
     try {
-      const res = await fetch('http://localhost:8000/api/admin/projects/items/delete', {
+      const res = await fetch(`${apiBase()}/admin/projects/items/delete`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
@@ -1280,7 +1281,7 @@ function ManageProjects() {
         }
       }
       try {
-        const res = await fetch('http://localhost:8000/api/admin/projects/items/edit', {
+        const res = await fetch(`${apiBase()}/admin/projects/items/edit`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify({
@@ -1308,7 +1309,7 @@ function ManageProjects() {
         return;
       }
       try {
-        const res = await fetch('http://localhost:8000/api/admin/projects/items/add', {
+        const res = await fetch(`${apiBase()}/admin/projects/items/add`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify({
@@ -1325,6 +1326,7 @@ function ManageProjects() {
   setNewItem({ itemType: '', itemName: '', partNo: '' });
   fetchProjectItems(selectedProject);
       } catch (err) {
+        alert(err.message);
         setAddItemStatus(err.message);
       }
     };
