@@ -68,17 +68,33 @@ export default function SparesManagement() {
 function SparesMasterListPage() {
   const [partNo, setPartNo] = useState("");
   const [itemName, setItemName] = useState("");
-  const [binNo, setBinNo] = useState("");
+  const [noOfBins, setNoOfBins] = useState("");
+  const [binNos, setBinNos] = useState([]);
   const [rackNo, setRackNo] = useState("");
+  const [itemLoc, setItemLoc] = useState("");
   const [status, setStatus] = useState("");
 
   const navigate = useNavigate();
 
+  const handleNoOfBinsChange = (e) => {
+    const count = Number(e.target.value);
+    setNoOfBins(count);
+    setBinNos(Array(count).fill(""));
+  };
+
+  const handleBinNoChange = (index, value) => {
+    const updated = [...binNos];
+    updated[index] = value;
+    setBinNos(updated);
+  };
+
   const clearForm = () => {
     setPartNo("");
     setItemName("");
-    setBinNo("");
+    setNoOfBins("");
+    setBinNos([]);
     setRackNo("");
+    setItemLoc("");
     setStatus("");
   };
 
@@ -98,8 +114,10 @@ function SparesMasterListPage() {
         body: JSON.stringify({
           part_no: partNo,
           item_name: itemName,
-          bin_no: binNo,
+          no_of_bins: noOfBins,
+          bin_nos: binNos,
           rack_no: rackNo,
+          item_loc: itemLoc,
         }),
       });
 
@@ -151,16 +169,26 @@ function SparesMasterListPage() {
                 </label>
 
                 <label className={styles.label}>
-                  BIN NO
+                  NO OF BINS
                   <input
                     className={styles.control}
                     type="number"
-                    value={binNo}
-                    onChange={(e) => setBinNo(e.target.value)}
+                    value={noOfBins}
+                    onChange={handleNoOfBinsChange}
                     required 
                   />
                 </label>
-
+                {binNos.map((bin, index) => (
+                  <label className={styles.label} key={index}>
+                    BIN NO {index + 1}
+                    <input
+                      className={styles.control}
+                      value={bin}
+                      onChange={(e) => handleBinNoChange(index, e.target.value)}
+                      required
+                    />
+                  </label>
+                ))}
                 <label className={styles.label}>
                   RACK NO
                   <input
@@ -169,6 +197,15 @@ function SparesMasterListPage() {
                     value={rackNo}
                     onChange={(e) => setRackNo(e.target.value)}
                     required 
+                  />
+                </label>
+                <label className={styles.label}>
+                  ITEM LOC
+                  <input
+                    className={styles.control}
+                    value={itemLoc}
+                    onChange={(e) => setItemLoc(e.target.value)}
+                    required
                   />
                 </label>
               </div>
@@ -197,7 +234,9 @@ function SparesInPage() {
   const [partSearch, setPartSearch] = useState("");
   const [filteredItems, setFilteredItems] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [binNo, setBinNo] = useState("");
+  const [noOfBins, setNoOfBins] = useState("");
+  const [binNos, setBinNos] = useState([]);
+  const [itemLoc, setItemLoc] = useState("");
   const [rackNo, setRackNo] = useState("");
   const [recievedFrom, setRecievedFrom] = useState("");
 
@@ -243,8 +282,10 @@ function SparesInPage() {
     setPartSearch('');
     setFilteredItems([]);
     setShowDropdown(false);
-    setBinNo("");
+    setNoOfBins("");
+    setBinNos([]);
     setRackNo("");
+    setItemLoc("");
     setRecievedFrom("");
   };
 
@@ -255,8 +296,10 @@ function SparesInPage() {
     if (item) {
       setItemName(item.item_name);
       setCurrentQty(item.qty || 0);
-      setBinNo(item.bin_no || "");
+      setNoOfBins(item.no_of_bins || 0);
+      setBinNos(item.bin_nos || []);
       setRackNo(item.rack_no || "");
+      setItemLoc(item.item_loc || "");
     }
   };
 
@@ -277,8 +320,10 @@ function SparesInPage() {
           part_no: selectedPart,
           qty_in: Number(qtyIn),
           remarks: remarks,
-          bin_no: binNo,
+          no_of_bins: noOfBins,
+          bin_nos: binNos,
           rack_no: rackNo,
+          item_loc: itemLoc,
           recieved_from: recievedFrom,
         }),
       });
@@ -364,15 +409,35 @@ function SparesInPage() {
 
               <div className={styles.formGrid2}>
                 <label className={styles.label}>
-                  BIN NO
-                  <input className={styles.control} value={binNo} readOnly />
+                  NO OF BINS
+                  <input
+                    className={styles.control}
+                    value={noOfBins}
+                    readOnly
+                  />
                 </label>
-
+                {binNos.map((bin, index) => (
+                  <label className={styles.label} key={index}>
+                    BIN NO {index + 1}
+                    <input
+                      className={styles.control}
+                      value={bin}
+                      readOnly
+                    />
+                  </label>
+                ))}
                 <label className={styles.label}>
                   RACK NO
                   <input className={styles.control} value={rackNo} readOnly />
                 </label>
-
+                <label className={styles.label}>
+                  ITEM LOC
+                  <input
+                    className={styles.control}
+                    value={itemLoc}
+                    readOnly
+                  />
+                </label>
               </div>
               <div className={styles.formGrid2}>
                 <label className={styles.label}>
@@ -433,8 +498,10 @@ function SparesOutPage() {
   const [partSearch, setPartSearch] = useState("");
   const [filteredItems, setFilteredItems] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [binNo, setBinNo] = useState("");
+  const [noOfBins, setNoOfBins] = useState("");
+  const [binNos, setBinNos] = useState([]);
   const [rackNo, setRackNo] = useState("");
+  const [itemLoc, setItemLoc] = useState("");
 
   const navigate = useNavigate();
 
@@ -481,8 +548,10 @@ function SparesOutPage() {
     setPartSearch('');
     setFilteredItems([]);
     setShowDropdown(false);
-    setBinNo("");
+    setNoOfBins("");
+    setBinNos([]);
     setRackNo("");
+    setItemLoc("");
   };
 
   // Auto-fill name + qty
@@ -493,8 +562,10 @@ function SparesOutPage() {
     if (item) {
       setItemName(item.item_name);
       setQtyAvailable(item.qty || 0);
-      setBinNo(item.bin_no || "");
+      setNoOfBins(item.no_of_bins || 0);
+      setBinNos(item.bin_nos || "");
       setRackNo(item.rack_no || "");
+      setItemLoc(item.item_loc || "");
     }
   };
 
@@ -517,8 +588,10 @@ function SparesOutPage() {
           qty_out: Number(qtyOut),
           handing_over_to: handingTo,
           remarks: remarks,
-          bin_no: binNo,
+          no_of_bins: noOfBins,
+          bin_nos: binNos,
           rack_no: rackNo,
+          item_loc: itemLoc,
         }),
       });
 
@@ -609,13 +682,30 @@ function SparesOutPage() {
 
               <div className={styles.formGrid2}>
                 <label className={styles.label}>
-                  BIN NO
-                  <input className={styles.control} value={binNo} readOnly />
+                  NO OF BINS
+                  <input
+                    className={styles.control}
+                    value={noOfBins}
+                    readOnly
+                  />
                 </label>
-
+                {binNos.map((bin, index) => (
+                  <label className={styles.label} key={index}>
+                    BIN NO {index + 1}
+                    <input
+                      className={styles.control}
+                      value={bin}
+                      readOnly
+                    />
+                  </label>
+                ))}
                 <label className={styles.label}>
                   RACK NO
                   <input className={styles.control} value={rackNo} readOnly />
+                </label>
+                <label className={styles.label}>
+                  ITEM LOC
+                  <input className={styles.control} value={itemLoc} readOnly />
                 </label>
               </div>
 
@@ -673,6 +763,10 @@ function ViewItemPage() {
   const [items, setItems] = useState([]);
   const [selectedPart, setSelectedPart] = useState("");
   const [itemName, setItemName] = useState("");
+  const [itemLoc, setItemLoc] = useState("");
+  const [rackNo, setRackNo] = useState("");
+  const [noOfBins, setNoOfBins] = useState(0);
+  const [binNos, setBinNos] = useState([]);
   const [qtyAvailable, setQtyAvailable] = useState(0);
   const [auditList, setAuditList] = useState([]);
   const [startDate, setStart] = useState("");
@@ -756,6 +850,10 @@ function ViewItemPage() {
       const detail = await detailRes.json();
 
       setItemName(detail.item_name || "");
+      setItemLoc(detail.item_loc || "");
+      setRackNo(detail.rack_no || "");
+      setNoOfBins(detail.no_of_bins || 0);
+      setBinNos(detail.bin_nos || []);
       setQtyAvailable(detail.qty || 0);
 
       // Audit list
@@ -829,7 +927,38 @@ function ViewItemPage() {
                     readOnly
                   />
                 </label>
-
+                <label className={styles.label}>
+                  ITEM LOC
+                  <input
+                    className={styles.control}
+                    value={itemLoc}
+                    readOnly
+                  />
+                </label>
+                <label className={styles.label}>
+                  RACK NO
+                  <input
+                    className={styles.control}
+                    value={rackNo}
+                    readOnly
+                  />
+                </label>
+                <label className={styles.label}>
+                  NO OF BINS
+                  <input
+                    className={styles.control}
+                    value={noOfBins}
+                    readOnly
+                  />
+                </label>
+                <label className={styles.label}>
+                  BIN NO(S)
+                  <input
+                    className={styles.control}
+                    value={binNos.join(", ")}
+                    readOnly
+                  />
+                </label>
                 <label className={styles.label}>
                   AVAILABLE QTY
                   <input
@@ -994,6 +1123,10 @@ function StockCheckPage() {
                     <th>Sl No</th>
                     <th>Part No</th>
                     <th>Item Name</th>
+                    <th>Item Loc</th>
+                    <th>Rack No</th>
+                    <th>No of Bins</th>
+                    <th>Bin No</th>
                     <th>Qty</th>
                   </tr>
                 </thead>
@@ -1009,6 +1142,10 @@ function StockCheckPage() {
                         <td>{index + 1}</td>
                         <td>{item.part_no}</td>
                         <td>{item.item_name}</td>
+                        <td>{item.item_loc || "-"}</td>
+                        <td>{item.rack_no || "-"}</td>
+                        <td>{item.no_of_bins ?? 0}</td>
+                        <td>{item.bin_nos ? item.bin_nos.join(", ") : "-"}</td>
                         <td>{item.qty ?? 0}</td>
                       </tr>
                     ))

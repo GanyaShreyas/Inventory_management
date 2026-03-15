@@ -207,6 +207,11 @@ function Dashboard() {
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/item-in">OPEN</Link>
             </div>
             <div className={styles.card}>
+              <div className={styles.cardTitle}>RFD</div>
+              <div className={styles.cardDesc}>Mark items as ready for a given pass number.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/rfd">OPEN</Link>
+            </div>
+            <div className={styles.card}>
               <div className={styles.cardTitle}>ITEM OUT</div>
               <div className={styles.cardDesc}>Mark items as out for a given pass number.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/item-out">OPEN</Link>
@@ -730,12 +735,350 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
   );
 }
 
+function RFDPage() {
+  const [passNo, setPassNo] = useState('');
+  const [record, setRecord] = useState(null);
+  const [projectOptions, setProjectOptions] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const suggestionRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (suggestionRef.current && !suggestionRef.current.contains(e.target)) {
+        setShowSuggestions(false); // collapse, but keep suggestions in memory
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (passNo.length >= 2) {
+      const fetchSuggestions = async () => {
+        try {
+          const params = new URLSearchParams();
+          params.set('type', 'passNo');
+          params.set('value', passNo);
+          const res = await fetch(`${apiBase()}/search/suggestions?${params.toString()}`, { headers: { ...authHeaders() } });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || 'Failed to fetch suggestions');
+          setSuggestions(data.suggestions || []);
+        }
+        catch (err) {
+          console.error('Error fetching suggestions:', err);
+          setSuggestions([]);
+        }
+      };
+      fetchSuggestions();
+    }
+    else {
+      setSuggestions([]);
+    }
+  }, [passNo]);
+
+  useEffect(() => {
+    fetch(`${apiBase()}/admin/projects/list`, { headers: { ...authHeaders() } })
+      .then(res => res.json())
+      .then(data => setProjectOptions(data.projects || []));
+  }, []);  
+  const [status, setStatus] = useState('');
+  const navigate = useNavigate();
+
+  const clearForm = () => {
+    setPassNo('');
+    setRecord(null);
+    setStatus('');
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  const fetchRecord = async () => {
+    if (!passNo || passNo.trim() === "") {
+      alert("Please enter a Pass No");
+      return;
+    }
+    setStatus('');
+    try {
+      console.log('=== FETCHING RECORD DEBUG ===');
+      console.log('Pass Number:', passNo);
+      console.log('Auth headers:', authHeaders());
+      
+      const res = await fetch(`${apiBase()}/items/${encodeURIComponent(passNo)}`, { headers: { ...authHeaders() } });
+      console.log('Fetch response status:', res.status);
+      
+      const data = await res.json();
+      console.log('Fetch response data:', data);
+      
+      if (!res.ok) throw new Error(data?.error || 'Not found');
+      console.log('Fetched record data:', data);
+      console.log('Items in fetched record:', data.items);
+      setRecord(data);
+    } catch (err) {
+      console.error('Error fetching record:', err);
+      setRecord(null);
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+
+  const updateRfd = (idx, value) => {
+    setRecord((prev) => {
+      const newItems = prev.items.map((it, i) => {
+        if (i === idx) {
+          const updatedItem = { ...it, itemRfd: value };
+
+          // Auto-set dateOut when itemRfd is checked and no dateRfd exists
+          if (value === true && (!updatedItem.dateRfd || updatedItem.dateRfd === '')) {
+            updatedItem.dateRfd = new Date().toISOString().slice(0, 10);
+          }
+          // Clear dateRfd when itemRfd is unchecked
+          else if (value === false) {
+            console.log(`Clearing dateRfd for item ${idx} since itemRfd is now false`);
+            updatedItem.dateRfd = null;
+          }
+          return updatedItem;
+        }
+        return it;
+      });
+      console.log('New items array:', newItems);
+      return { ...prev, items: newItems };
+    });
+  };
+
+  const updateDateRfd = (idx, value) => {
+    console.log(`Updating dateRfd for item ${idx} to:`, value);
+    setRecord((prev) => {
+      const newItems = prev.items.map((it, i) => {
+        if (i === idx) {
+          console.log(`Item ${idx} before update:`, it);
+          const updatedItem = { ...it, dateRfd: value };
+          console.log(`Item ${idx} after update:`, updatedItem);
+          return updatedItem;
+        }
+        return it;
+      });
+      console.log('New items array:', newItems);
+      return { ...prev, items: newItems };
+    });
+  };
+
+  const updateRectificationDetails = (idx, value) => {
+    setRecord((prev) => ({ ...prev, items: prev.items.map((it, i) => i === idx ? { ...it, itemRectificationDetails: value } : it) }));
+  };
+
+  const updateFeedback1Details = (idx, value) => {
+    setRecord((prev) => ({ ...prev, items: prev.items.map((it, i) => i === idx ? { ...it, itemFeedback1Details: value } : it) }));
+  };
+
+  const updateFeedback2Details = (idx, value) => {
+    setRecord((prev) => ({ ...prev, items: prev.items.map((it, i) => i === idx ? { ...it, itemFeedback2Details: value } : it) }));
+  };
+
+  const onSubmit = async () => {
+    if (!record) return;
+
+    // Validate that all items marked as "rfd" have a date
+    const itemsWithoutDate = record.items.filter(item => item.itemRfd && (!item.dateRfd || item.dateRfd === ''));
+    if (itemsWithoutDate.length > 0) {
+      alert('Please set a date for all items marked as "RFD"');
+      return;
+    }
+
+    // Validate that all items marked as "rfd" have rectification details
+    const itemsWithoutDetails = record.items.filter(item => item.itemRfd && (!item.itemRectificationDetails || item.itemRectificationDetails.trim() === ''));
+    if (itemsWithoutDetails.length > 0) {
+      alert('Please enter rectification details for all items marked as "RFD"');
+      return;
+    }
+
+    // Confirm submission
+    const confirmSubmit = window.confirm('Are you sure you want to update this record?');
+    if (!confirmSubmit) {
+      return;
+    }
+
+    setStatus('');
+    try {
+      // Send all items in the same order as the original record
+      // This ensures the backend can match items by position, avoiding issues with duplicate serial numbers
+      const updates = record.items.map((it) => ({ 
+        serialNumber: it.serialNumber, 
+        itemRfd: !!it.itemRfd, 
+        dateRfd: it.dateRfd || null, 
+        itemRectificationDetails: it.itemRectificationDetails || '',
+        itemFeedback1Details: it.itemFeedback1Details || '',
+        itemFeedback2Details: it.itemFeedback2Details || ''
+      }));
+
+      console.log('=== RFD SUBMISSION DEBUG ===');
+      console.log('Pass Number:', record.passNo);
+      console.log('Original record items:', record.items);
+      console.log('Submitting updates:', updates);
+      console.log('Request URL:', `${apiBase()}/items/rfd/${encodeURIComponent(record.passNo)}`);
+      console.log('Request payload:', JSON.stringify({ items: updates }, null, 2));
+
+      const res = await fetch(`${apiBase()}/items/rfd/${encodeURIComponent(record.passNo)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ items: updates })
+      });
+
+      console.log('Response status:', res.status);
+      console.log('Response headers:', Object.fromEntries(res.headers.entries()));
+
+      const data = await res.json();
+      console.log('Response data:', data);
+
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+
+      alert('Record updated successfully!');
+      setStatus('Updated');
+      clearForm();
+    } catch (err) {
+      console.error('Error in ItemRFD submission:', err);
+      alert(`Error: ${err.message}`);
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+
+  return(
+    <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+      <div className={styles.pageHeader}>
+        <div className={styles.pageTitle}>RFD</div>
+        <div className={styles.pageActions}>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>CLOSE</button>
+        </div>
+      </div>   
+      <div className={styles.card}>
+        <div className={styles.formRow}>
+          <label className={styles.label}>
+            PRIVATE PASS NO
+            <div className={styles.relativeContainer} ref={suggestionRef}>
+              <input 
+                className={styles.control} 
+                placeholder="PASS NO" 
+                value={passNo} 
+                onChange={(e) => setPassNo(e.target.value)}
+                onFocus={() => setShowSuggestions(true)} // expand again when input is focused 
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className={styles.suggestionsList}>
+                  {suggestions.map((s, i) => (
+                    <li key={i} onClick={() => { setPassNo(s); setShowSuggestions(false); }}>
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </label>
+          <div className={styles.pageActions}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={fetchRecord}>SEARCH</button>
+          </div>
+        </div>
+      </div> 
+      {record ? (
+        <div className={styles.cardRFD} style={{ marginTop: 12 }}>
+          <div className={styles.formGrid3}>
+            <div><b>PRIVATE PASS NO:</b> {record.passNo}</div>
+            <div><b>DATE IN:</b> {record.dateIn}</div>
+            <div><b>CUSTOMER:</b> {record.customer?.name}</div>
+            <div><b>PROJECT:</b> {record.projectName || ''}</div>
+            <div><b>PHONE:</b> {record.customer?.phone}</div>
+            <div><b>UNIT ADDRESS:</b> {record.customer?.unitAddress}</div>
+            <div><b>LOCATION:</b> {record.customer?.location}</div>
+          </div>
+          <div className={styles.tableWrap} style={{ marginTop: 12, maxHeight: 350, overflowY: 'auto', overflowX: 'auto' }}>
+            <table className={styles.table} style={{ minWidth: 900 }}>
+              <thead>
+                <tr>
+                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>RFD</th><th>RFD DATE</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1</th><th>REMARKS 2</th>
+                </tr>
+              </thead>
+              <tbody>
+                {record.items?.map((it, idx) => (
+                  <tr key={idx}>
+                    <td>{it.equipmentType}</td>
+                    <td>{it.itemName}</td>
+                    <td>{it.partNumber}</td>
+                    <td>{it.serialNumber}</td>
+                    <td>{it.defectDetails}</td>
+                    {/* <td><input type="checkbox" checked={!!it.itemIn} readOnly /></td> */}
+                    <td><input type="checkbox" checked={!!it.itemRfd} disabled={it.itemOut === true} onChange={(e) => updateRfd(idx, e.target.checked)} /></td>
+                    <td>
+                      <input 
+                        type="date" 
+                        className={styles.control} 
+                        value={it.dateRfd || ''} 
+                        onChange={(e) => updateDateRfd(idx, e.target.value)}
+                        placeholder="SELECT DATE"
+                      />
+                      {!it.dateRfd && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
+                      {it.itemRfd && !it.dateRfd && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR RFD</div>}
+                    </td>
+                    <td>
+                      <textarea
+                        className={styles.control}
+                        value={it.itemRectificationDetails || ""}
+                        onChange={(e) => updateRectificationDetails(idx, e.target.value)}
+                        required={it.itemRfd}
+                        rows={1} // looks like an input initially
+                      />
+                      {it.itemRfd &&
+                        (!it.itemRectificationDetails ||
+                          it.itemRectificationDetails.trim() === "") && (
+                          <div
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "#ff6b6b",
+                              marginTop: "2px",
+                            }}
+                          >
+                            ⚠️ Rectification details required for RFD
+                          </div>
+                        )}
+                    </td>
+                    <td>
+                      <textarea
+                        className={styles.control}
+                        value={it.itemFeedback1Details || ""}
+                        onChange={(e) => updateFeedback1Details(idx, e.target.value)}
+                        rows={1} // looks like an input initially
+                      />
+                    </td>
+                    <td>
+                      <textarea
+                        className={styles.control}
+                        value={it.itemFeedback2Details || ""}
+                        onChange={(e) => updateFeedback2Details(idx, e.target.value)}
+                        rows={1} // looks like an input initially
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className={styles.pageActions} style={{ marginTop: 12 }}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={onSubmit}>Save</button>
+          </div>
+        </div>
+      ) : null}
+      {status ? <div className={styles.card} style={{ marginTop: 12, padding: 12 }}>{status}</div> : null}
+    </div>
+  );
+}
+
 function ItemOutPage() {
   const [passNo, setPassNo] = useState('');
   const [record, setRecord] = useState(null);
   const [projectOptions, setProjectOptions] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [originalRecord, setOriginalRecord] = useState(null); // Store original DB state to check what was already saved
 
   const suggestionRef = useRef(null);
 
@@ -787,12 +1130,17 @@ function ItemOutPage() {
   const clearForm = () => {
     setPassNo('');
     setRecord(null);
+    setOriginalRecord(null);
     setStatus('');
     setSuggestions([]);
     setShowSuggestions(false);
   };
 
   const fetchRecord = async () => {
+    if (!passNo || passNo.trim() === "") {
+      alert("Please enter a Pass No");
+      return;
+    }
     setStatus('');
     try {
       console.log('=== FETCHING RECORD DEBUG ===');
@@ -808,10 +1156,13 @@ function ItemOutPage() {
       if (!res.ok) throw new Error(data?.error || 'Not found');
       console.log('Fetched record data:', data);
       console.log('Items in fetched record:', data.items);
+      const dataCopy = JSON.parse(JSON.stringify(data));
       setRecord(data);
+      setOriginalRecord(dataCopy);
     } catch (err) {
       console.error('Error fetching record:', err);
       setRecord(null);
+      setOriginalRecord(null);
       setStatus(`Error: ${err.message}`);
     }
   };
@@ -927,6 +1278,23 @@ function ItemOutPage() {
       
       if (!res.ok) throw new Error(data?.error || 'Failed');
       
+      // Fetch the updated record from DB to update originalRecord with the saved state
+      try {
+        const refetchRes = await fetch(`${apiBase()}/items/${encodeURIComponent(record.passNo)}`, { headers: { ...authHeaders() } });
+        if (refetchRes.ok) {
+          const refetchedData = await refetchRes.json();
+          console.log('Refetched data after save:', refetchedData);
+          const refetchedCopy = JSON.parse(JSON.stringify(refetchedData));
+          setRecord(refetchedData);
+          setOriginalRecord(refetchedCopy); // Set originalRecord to the new DB state - this disables checkboxes
+          console.log('Updated originalRecord:', refetchedCopy);
+        } else {
+          console.warn('Refetch failed with status:', refetchRes.status);
+        }
+      } catch (err) {
+        console.error('Error refetching record after save:', err);
+      }
+      
       alert('Record updated successfully!');
       setStatus('Updated');
       clearForm();
@@ -938,7 +1306,7 @@ function ItemOutPage() {
   };
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>ITEM OUT</div>
         <div className={styles.pageActions}>
@@ -988,70 +1356,59 @@ function ItemOutPage() {
             <table className={styles.table} style={{ minWidth: 900 }}>
               <thead>
                 <tr>
-                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1</th><th>REMARKS 2</th>
+                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>RECTIFICATION DETAILS</th><th>ITEMOUT</th><th>DATE OUT</th><th>REMARKS 1</th><th>REMARKS 2</th>
                 </tr>
               </thead>
               <tbody>
-                {record.items?.map((it, idx) => (
-                  <tr key={idx}>
-                    <td>{it.equipmentType}</td>
-                    <td>{it.itemName}</td>
-                    <td>{it.partNumber}</td>
-                    <td>{it.serialNumber}</td>
-                    <td>{it.defectDetails}</td>
-                    {/* <td><input type="checkbox" checked={!!it.itemIn} readOnly /></td> */}
-                    <td><input type="checkbox" checked={!!it.itemOut} onChange={(e) => updateItemOut(idx, e.target.checked)} /></td>
-                    <td>
-                      <input 
-                        type="date" 
-                        className={styles.control} 
-                        value={it.dateOut || ''} 
-                        onChange={(e) => updateDateOut(idx, e.target.value)}
-                        placeholder="SELECT DATE"
-                      />
-                      {!it.dateOut && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
-                      {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
-                    </td>
-                    <td>
-                      <textarea
-                        className={styles.control}
-                        value={it.itemRectificationDetails || ""}
-                        onChange={(e) => updateRectificationDetails(idx, e.target.value)}
-                        required={it.itemOut}
-                        rows={1} // looks like an input initially
-                      />
-                      {it.itemOut &&
-                        (!it.itemRectificationDetails ||
-                          it.itemRectificationDetails.trim() === "") && (
-                          <div
-                            style={{
-                              fontSize: "0.75rem",
-                              color: "#ff6b6b",
-                              marginTop: "2px",
-                            }}
-                          >
-                            ⚠️ Rectification details required for Item Out
-                          </div>
-                        )}
-                    </td>
-                    <td>
-                      <textarea
-                        className={styles.control}
-                        value={it.itemFeedback1Details || ""}
-                        onChange={(e) => updateFeedback1Details(idx, e.target.value)}
-                        rows={1} // looks like an input initially
-                      />
-                    </td>
-                    <td>
-                      <textarea
-                        className={styles.control}
-                        value={it.itemFeedback2Details || ""}
-                        onChange={(e) => updateFeedback2Details(idx, e.target.value)}
-                        rows={1} // looks like an input initially
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {record.items?.map((it, idx) => {
+                  const rowDisabled = !it.itemRfd;
+                  // Disable only if it was ALREADY itemOut=true in the ORIGINAL DB state (before user edits)
+                  const itemOutLocked = originalRecord?.items?.[idx]?.itemOut === true;
+                  return (
+                    <tr key={idx}
+                      style={{
+                        opacity: rowDisabled ? 0.5 : 1,
+                        pointerEvents: rowDisabled ? "none" : "auto"
+                      }}
+                    >
+                      <td>{it.equipmentType}</td>
+                      <td>{it.itemName}</td>
+                      <td>{it.partNumber}</td>
+                      <td>{it.serialNumber}</td>
+                      <td>{it.defectDetails}</td>
+                      <td>{it.itemRectificationDetails || "-"}</td>
+                      {/* <td><input type="checkbox" checked={!!it.itemIn} readOnly /></td> */}
+                      <td><input type="checkbox" checked={!!it.itemOut} disabled={itemOutLocked} onChange={(e) => updateItemOut(idx, e.target.checked)} /></td>
+                      <td>
+                        <input 
+                          type="date" 
+                          className={styles.control} 
+                          value={it.dateOut || ''} 
+                          onChange={(e) => updateDateOut(idx, e.target.value)}
+                          placeholder="SELECT DATE"
+                        />
+                        {!it.dateOut && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
+                        {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
+                      </td>
+                      <td>
+                        <textarea
+                          className={styles.control}
+                          value={it.itemFeedback1Details || ""}
+                          onChange={(e) => updateFeedback1Details(idx, e.target.value)}
+                          rows={1} // looks like an input initially
+                        />
+                      </td>
+                      <td>
+                        <textarea
+                          className={styles.control}
+                          value={it.itemFeedback2Details || ""}
+                          onChange={(e) => updateFeedback2Details(idx, e.target.value)}
+                          rows={1} // looks like an input initially
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1704,6 +2061,7 @@ function SearchPage() {
                 <th>DEFECT DETAILS</th>
                 <th>STATUS</th>
                 <th>DATE IN</th>
+                <th>DATE RFD</th>
                 <th>DATE OUT</th>
                 <th>RECTIFICATION DETAILS</th>
                 <th>REMARKS 1 </th>
@@ -1716,8 +2074,8 @@ function SearchPage() {
               {result.data.map((doc, docIndex) => {
                 const items = doc.items || [];
                 return items.map((item, itemIndex) => {
-                  // Determine status: OUT if both itemIn and itemOut are true, else IN
-                  const status = item.itemIn && item.itemOut ? "OUT" : "IN";
+                  // Determine status: OUT if all itemIn, itemRfd, and itemOut are true, else IN
+                  const status = item.itemIn && item.itemOut ? "OUT" : item.itemIn && item.itemRfd && !item.itemOut ? "RFD" : "IN";
                   
                   // Format phone number properly
                   const phone = doc.customer?.phone || "";
@@ -1725,6 +2083,7 @@ function SearchPage() {
                   
                   // Format dates
                   const dateIn = doc.dateIn || "";
+                  const dateRfd = item.dateRfd || "";
                   const dateOut = item.dateOut || "";
                   
                   return (
@@ -1743,6 +2102,7 @@ function SearchPage() {
                       <td>{item.defectDetails || ""}</td>
                       <td>{status}</td>
                       <td>{dateIn}</td>
+                      <td>{dateRfd}</td>
                       <td>{dateOut}</td>
                       <td style={{textAlign: 'left'}}>{item.itemRectificationDetails || ""}</td>
                       <td style={{textAlign: 'left'}}>{item.itemFeedback1Details || ""}</td>
@@ -1826,6 +2186,7 @@ function SearchPage() {
               <option value = "All">ALL</option>
               <option value = "In">IN</option>
               <option value = "Out">OUT</option>
+              <option value = "RFD">RFD</option>
             </select>
           </label>
           {type === 'serialNumber' && (
@@ -2076,7 +2437,9 @@ function EditPage() {
       partNoOptions: [],
       itemIn: src.itemIn ?? true,
       itemOut: false,
-      dateOut: null
+      itemRfd: false,
+      dateOut: null,
+      dateRfd: null
     };
 
     const newItems = [...items.slice(0, idx + 1), newRow, ...items.slice(idx + 1)];
@@ -2184,6 +2547,16 @@ function EditPage() {
             console.log(`Clearing dateOut for item ${idx} since itemOut is now false`);
             updatedItem.dateOut = null;
           }
+
+          // Auto-set dateRfd when itemRfd is checked and no dateRfd exists
+          if (key === 'itemRfd' && value === true && (!updatedItem.dateRfd || updatedItem.dateRfd === '')) {
+            updatedItem.dateRfd = new Date().toISOString().slice(0, 10);
+          }
+          // Clear dateRfd when itemRfd is unchecked
+          else if (key === 'itemRfd' && value === false) {
+            console.log(`Clearing dateRfd for item ${idx} since itemRfd is now false`);
+            updatedItem.dateRfd = null;
+          }
           
           return updatedItem;
         }
@@ -2195,7 +2568,7 @@ function EditPage() {
   };
 
   const addItem = () => {
-    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: '', itemName: '', partNumber: '', serialNumber: '', defectDetails: '', itemIn: true, itemOut: false, dateOut: null, itemRectificationDetails: '', itemFeedback1Details: '', itemFeedback2Details: ''}] }));
+    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: '', itemName: '', partNumber: '', serialNumber: '', defectDetails: '', itemIn: true, itemOut: false, itemRfd: false, dateOut: null, dateRfd: null, itemRectificationDetails: '', itemFeedback1Details: '', itemFeedback2Details: ''}] }));
   };
 
   const deleteItem = (idx) => {
@@ -2228,9 +2601,9 @@ function EditPage() {
       return;
     }
     
-    const itemsWithoutDetails = doc.items.filter(item => item.itemOut && (!item.itemRectificationDetails || item.itemRectificationDetails.trim() === ''));
+    const itemsWithoutDetails = doc.items.filter(item => item.itemRfd && (!item.itemRectificationDetails || item.itemRectificationDetails.trim() === ''));
     if (itemsWithoutDetails.length > 0) {
-      alert('Please enter rectification details for all items marked as "Item Out"');
+      alert('Please enter rectification details for all items marked as "Item RFD"');
       return;
     }
 
@@ -2377,7 +2750,7 @@ function EditPage() {
               <table className={styles.table} style={{ minWidth: '1200px' }}>
                 <thead>
                   <tr>
-                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>DATE OUT</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1 DETAILS</th><th>REMARKS 2 DETAILS</th>
+                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>RFD</th><th>DATE OUT</th><th>DATE RFD</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1 DETAILS</th><th>REMARKS 2 DETAILS</th>
                     {isEditing && <th style={{ minWidth: '100px', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
@@ -2420,6 +2793,7 @@ function EditPage() {
                       <td><input className={styles.control} value={(it.serialNumber || '').toUpperCase()} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} readOnly={!isEditing} required /></td>
                       <td><input className={styles.control} value={it.defectDetails || ''} onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)} readOnly={!isEditing} /></td>
                       <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!it.itemOut} onChange={(e) => updateItem(idx, 'itemOut', e.target.checked)} disabled={!isEditing} /></td>
+                      <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!it.itemRfd} onChange={(e) => updateItem(idx, 'itemRfd', e.target.checked)} disabled={!isEditing} /></td>
                       <td>
                         <input 
                           type="date" 
@@ -2432,6 +2806,17 @@ function EditPage() {
                         {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
                       </td>
                       <td>
+                        <input 
+                          type="date" 
+                          className={styles.control} 
+                          value={it.dateRfd || ''} 
+                          onChange={(e) => updateItem(idx, 'dateRfd', e.target.value)}
+                          readOnly={!isEditing}
+                        />
+                        {!it.dateRfd && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
+                        {it.itemRfd && !it.dateRfd && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM RFD</div>}
+                      </td>
+                      <td>
                           <textarea
                             className={styles.control}
                             value={it.itemRectificationDetails || ""}
@@ -2439,7 +2824,7 @@ function EditPage() {
                             readOnly={!isEditing}
                             rows={1} // looks like an input initially
                           />
-                          {it.itemOut &&
+                          {it.itemRfd &&
                             (!it.itemRectificationDetails ||
                               it.itemRectificationDetails.trim() === "") && (
                               <div
@@ -2449,7 +2834,7 @@ function EditPage() {
                                   marginTop: "2px",
                                 }}
                               >
-                                ⚠️ Rectification details required for Item Out
+                                ⚠️ Rectification details required for Item RFD
                               </div>
                           )}
                       </td>
@@ -2721,6 +3106,11 @@ function App() {
         <Route path="/item-in" element={
           <ProtectedRoute requiredRole="user">
             <ItemInPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/rfd" element={
+          <ProtectedRoute requiredRole="user">
+            <RFDPage />
           </ProtectedRoute>
         } />
         <Route path="/item-out" element={

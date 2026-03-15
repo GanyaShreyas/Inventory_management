@@ -205,7 +205,7 @@ function Sticker() {
             <div className={styles.pageHeader}>
                 <div className={styles.pageTitle}>PRINT STICKERS/HANDING OVER FORM</div>
                 <div className={styles.pageActions}>
-                    <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => { navigate('/dashboard'); clearForm() }}>CLOSE</button>
+                    <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => { navigate('/user/dashboard'); clearForm() }}>CLOSE</button>
                 </div>
             </div>
             <div className={styles.card}>
