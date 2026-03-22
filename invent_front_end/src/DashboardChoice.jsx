@@ -21,7 +21,7 @@ export default function DashboardChoice() {
           </div>
           <div className={styles.cardGrid}>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>DASHBOARD</div>
+              <div className={styles.cardTitle}>COMPLAINTS MANAGEMENT</div>
               <div className={styles.cardDesc}>MANAGE ITEMS.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/user/dashboard">OPEN</Link>
             </div>

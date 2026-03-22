@@ -13,15 +13,23 @@ import UserDashboardChoice from './DashboardChoice';
 import SparesManagement from './SparesManagement';  
 import DashboardChoice from './DashboardChoice';
 import { SparesMasterListPage, SparesInPage, SparesOutPage, ViewItemPage, StockCheckPage } from './SparesManagement';
+import ManageStores from './components/ManageStores';
 import { Outlet } from "react-router-dom";
+import { createPortal } from 'react-dom';
+import { apiBase, authHeaders } from './apiConfig';
 
-function apiBase() {
-  return 'http://localhost:8000/api';
-}
-
-function authHeaders() {
-  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+/** Optional field: whole number 2000–2100, or empty */
+function parseYearOfMfgInput(raw) {
+  if (raw === '' || raw === null || raw === undefined) return { ok: true, value: null };
+  const s = String(raw).trim();
+  if (!/^\d+$/.test(s)) {
+    return { ok: false, msg: 'Year of MFG must be a whole number between 2000 and 2100' };
+  }
+  const n = parseInt(s, 10);
+  if (n < 2000 || n > 2100) {
+    return { ok: false, msg: 'Year of MFG must be between 2000 and 2100' };
+  }
+  return { ok: true, value: n };
 }
 
 // Function to validate token and check if user is still authenticated
@@ -178,6 +186,21 @@ function AdminDashboard() {
               <div className={styles.cardDesc}>CREATE NEW USERS.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/add-user">OPEN</Link>
             </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>RESET USER PASSWORD</div>
+              <div className={styles.cardDesc}>Reset any user's password by username.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/reset-password">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>MANAGE MASTER LIST — SPARES</div>
+              <div className={styles.cardDesc}>Add or update spares master items (part no, project, store, bins).</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/spares-master-list">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>MANAGE STORES</div>
+              <div className={styles.cardDesc}>Define store names used in Spares master list.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/manage-stores">OPEN</Link>
+            </div>
           </div>
         </div>
         <Footer />
@@ -190,6 +213,29 @@ function AdminDashboard() {
 function Dashboard() {
   const navigate = useNavigate();
 
+  const handleBackup = async () => {
+    try {
+      const res = await fetch(`${apiBase()}/admin/backup`, { headers: { ...authHeaders() } });
+      if (!res.ok) throw new Error('Backup failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+
+      const kolkataNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const dd = pad2(kolkataNow.getDate());
+      const mm = pad2(kolkataNow.getMonth() + 1);
+      const yyyy = kolkataNow.getFullYear();
+      a.download = `mongo_backup_${dd}-${mm}-${yyyy}.zip`;
+
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
   return (
     <div className={styles.inventoryLayout}>
       <Sidebar />
@@ -197,8 +243,8 @@ function Dashboard() {
         <Header />
         <div className={styles.page}>
           <div className={styles.pageHeader}>
-            <div className={styles.pageTitle}>DASHBOARD</div>
-            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/choice');}}>CLOSE</button>
+            <div className={styles.pageTitle}>COMPLAINTS MANAGEMENT</div>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/choice');}}>BACK</button>
           </div>
           <div className={styles.cardGrid}>
             <div className={styles.card}>
@@ -208,7 +254,7 @@ function Dashboard() {
             </div>
             <div className={styles.card}>
               <div className={styles.cardTitle}>RFD</div>
-              <div className={styles.cardDesc}>Mark items as ready for a given pass number.</div>
+              <div className={styles.cardDesc}>Mark items Ready For Dispatch.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/rfd">OPEN</Link>
             </div>
             <div className={styles.card}>
@@ -225,6 +271,13 @@ function Dashboard() {
               <div className={styles.cardTitle}>EDIT/VIEW</div>
               <div className={styles.cardDesc}>Edit or delete a record by pass number.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/edit">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>MONGO BACKUP</div>
+              <div className={styles.cardDesc}>Export every MongoDB collection as JSON.</div>
+              <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={handleBackup}>
+                Backup
+              </button>
             </div>
             <div className={styles.card}>
               <div className={styles.cardTitle}>PRINT STICKERS/HANDING OVER FORM</div>
@@ -260,7 +313,7 @@ function AdminAddUserPage() {
       // Call logout endpoint to invalidate session on server
       const token = sessionStorage.getItem('token') || localStorage.getItem('token');
       if (token) {
-        await fetch(`${apiBase()}//logout`, {
+        await fetch(`${apiBase()}/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -285,7 +338,7 @@ function AdminAddUserPage() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Confirm submission
     const confirmSubmit = window.confirm(`Are you sure you want to create a new user?\n\nName: ${name}\nUsername: ${username}\nRole: ${role}`);
     if (!confirmSubmit) {
@@ -319,7 +372,7 @@ function AdminAddUserPage() {
         <div className={styles.page}>
           <div className={styles.pageHeader}>
             <div className={styles.pageTitle}>ADMIN - ADD USER</div>    
-            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>CLOSE</button>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>BACK</button>
           </div>
       <div className={styles.card}>
         <form onSubmit={onSubmit} className={styles.form}>
@@ -347,7 +400,146 @@ function AdminAddUserPage() {
   );
 }
 
+function AdminResetPasswordPage() {
+  const [username, setUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [status, setStatus] = useState('');
+  const navigate = useNavigate();
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setStatus('');
+    if (newPassword.length < 4) {
+      setStatus('New password must be at least 4 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setStatus('Passwords do not match');
+      return;
+    }
+    const confirmSubmit = window.confirm(`Reset password for user: ${username}?`);
+    if (!confirmSubmit) return;
+
+    try {
+      const res = await fetch(`${apiBase()}/admin/users/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ username: username.trim().toLowerCase(), new_password: newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      alert('Password reset successfully');
+      setUsername('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setStatus('Password reset successfully');
+    } catch (err) {
+      setStatus(err.message);
+    }
+  };
+
+  return (
+    <div className={styles.inventoryLayout}>
+      <Sidebar />
+      <div className={styles.inventoryMain}>
+        <Header />
+        <div className={styles.page}>
+          <div className={styles.pageHeader}>
+            <div className={styles.pageTitle}>ADMIN — RESET USER PASSWORD</div>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/admin/admin-dashboard')}>BACK</button>
+          </div>
+          <div className={styles.card}>
+            <form onSubmit={onSubmit} className={styles.form}>
+              <div className={styles.formGrid2}>
+                <label className={styles.label}>USERNAME<input className={styles.control} value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="off" /></label>
+                <label className={styles.label}>NEW PASSWORD<input className={styles.control} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required autoComplete="new-password" minLength={4} /></label>
+                <label className={styles.label}>CONFIRM PASSWORD<input className={styles.control} type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required autoComplete="new-password" minLength={4} /></label>
+              </div>
+              {status ? <div style={{ color: status.includes('success') ? 'green' : '#b91c1c', marginTop: 8 }}>{status}</div> : null}
+              <div className={styles.pageActions}>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">RESET PASSWORD</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
+function UserChangePasswordPage() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [status, setStatus] = useState('');
+  const navigate = useNavigate();
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setStatus('');
+    if (newPassword.length < 4) {
+      setStatus('New password must be at least 4 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setStatus('Passwords do not match');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${apiBase()}/user/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+          confirm_password: confirmPassword
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      alert('Password changed successfully. Please log in again.');
+      clearAuthData();
+      navigate('/login', { replace: true });
+    } catch (err) {
+      setStatus(err.message);
+    }
+  };
+
+  return (
+    <div className={styles.inventoryLayout}>
+      <Sidebar />
+      <div className={styles.inventoryMain}>
+        <Header />
+        <div className={styles.page}>
+          <div className={styles.pageHeader}>
+            <div className={styles.pageTitle}>CHANGE PASSWORD</div>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate(-1)}>BACK</button>
+          </div>
+          <div className={styles.card}>
+            <form onSubmit={onSubmit} className={styles.form}>
+              <div className={styles.formGrid2}>
+                <label className={styles.label}>CURRENT PASSWORD<input className={styles.control} type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required autoComplete="current-password" /></label>
+                <label className={styles.label}>NEW PASSWORD<input className={styles.control} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required autoComplete="new-password" minLength={4} /></label>
+                <label className={styles.label}>CONFIRM NEW PASSWORD<input className={styles.control} type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required autoComplete="new-password" minLength={4} /></label>
+              </div>
+              {status ? <div style={{ color: status.includes('success') ? 'green' : '#b91c1c', marginTop: 8 }}>{status}</div> : null}
+              <div className={styles.pageActions}>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">CHANGE PASSWORD</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
 function ItemInPage() {
+  const MAX_ITEMS_PER_PASS = 20;
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [dateIn, setDateIn] = useState(today);
   const [customerName, setCustomerName] = useState('');
@@ -366,6 +558,7 @@ function ItemInPage() {
         itemName: '',
         partNumber: '',
         serialNumber: '',
+        yearOfMfg: '',
         defectDetails: '',
         itemTypeOptions: [],
         itemNameOptions: [],
@@ -424,6 +617,10 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
   //   });
   // };
   const duplicateItem = (idx) => {
+    if (items.length >= MAX_ITEMS_PER_PASS) {
+      setStatus(`Maximum ${MAX_ITEMS_PER_PASS} items are allowed per pass.`);
+      return;
+    }
     setItems(prev => {
       const copy = [...prev];
       const src = prev[idx] || {};
@@ -433,6 +630,7 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
         itemName: src.itemName || '',
         partNumber: src.partNumber || '',
         serialNumber: '',            // keep blank (or use src.serialNumber to copy)
+        yearOfMfg: '',
         defectDetails: '',          // keep blank (or copy)
         itemTypeOptions: Array.isArray(src.itemTypeOptions) ? [...src.itemTypeOptions] : [],
         itemNameOptions: Array.isArray(src.itemNameOptions) ? [...src.itemNameOptions] : [],
@@ -466,6 +664,7 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
       itemName: '',
       partNumber: '',
       serialNumber: '',
+      yearOfMfg: '',
       defectDetails: '',
       itemTypeOptions: [],
       itemNameOptions: [],
@@ -474,6 +673,10 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
   }
 
   const addItem = () => {
+      if (items.length >= MAX_ITEMS_PER_PASS) {
+        setStatus(`Maximum ${MAX_ITEMS_PER_PASS} items are allowed per pass.`);
+        return;
+      }
       setItems([
         ...items,
         {
@@ -481,6 +684,7 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
           itemName: '',
           partNumber: '',
           serialNumber: '',
+          yearOfMfg: '',
           defectDetails: '',
           itemTypeOptions: [],
           itemNameOptions: [],
@@ -558,6 +762,11 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
     e.preventDefault();
     setStatus('');
 
+    if (items.length > MAX_ITEMS_PER_PASS) {
+      alert(`Maximum ${MAX_ITEMS_PER_PASS} items are allowed per pass.`);
+      return;
+    }
+
     // Validate required fields
     if (!customerName || customerName.trim() === '') {
       alert('Customer Name is required');
@@ -573,6 +782,14 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
     if (customerPhoneNo && !validatePhoneNumber(customerPhoneNo)) {
       alert('Please enter a valid 10-digit phone number (e.g., 9876543210)');
       return;
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      const yr = parseYearOfMfgInput(items[i]?.yearOfMfg ?? '');
+      if (!yr.ok) {
+        alert(`Item ${i + 1}: ${yr.msg}`);
+        return;
+      }
     }
 
     // Validate item fields - all items must have Item Name, Part Number, and Serial Number
@@ -601,7 +818,22 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
     }
 
     try {
-      const payload = { dateIn, customerName, customerUnitAddress, customerLocation, customerPhoneNo, projectName, passNo, items };
+      const payload = {
+        dateIn,
+        customerName,
+        customerUnitAddress,
+        customerLocation,
+        customerPhoneNo,
+        projectName,
+        passNo,
+        items: items.map((row) => {
+          const yr = parseYearOfMfgInput(row.yearOfMfg ?? '');
+          return {
+            ...row,
+            yearOfMfg: yr.ok ? yr.value : null,
+          };
+        }),
+      };
       const res = await fetch(`${apiBase()}/items/in`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -624,7 +856,7 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>ITEM IN</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>CLOSE</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>BACK</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -658,10 +890,10 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
             </label>
           </div>
           <div className={styles.tableWrap} style={{ marginTop: 8, maxHeight: 350, overflowY: 'auto', overflowX: 'auto' }}>
-            <table className={styles.table} style={{ minWidth: 900 }}>
+            <table className={styles.table} style={{ minWidth: 1020 }}>
               <thead>
                 <tr>
-                  <th>ITEM TYPE</th><th>ITEM NAME *</th><th>PART NO *</th><th>SERIAL NO *</th><th>DEFECT</th><th>ACTIONS</th>
+                  <th>ITEM TYPE</th><th>ITEM NAME *</th><th>PART NO *</th><th>SERIAL NO *</th><th>YEAR OF MFG</th><th>DEFECT</th><th>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -704,6 +936,21 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
                         </select>
                       </td>
                       <td><input className={styles.control} value={(it.serialNumber).toUpperCase()} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} required /></td>
+                      <td>
+                        <input
+                          className={styles.control}
+                          type="text"
+                          inputMode="numeric"
+                          value={it.yearOfMfg ?? ''}
+                          onChange={(e) => updateItem(idx, 'yearOfMfg', e.target.value)}
+                          placeholder="2000–2100"
+                        />
+                        {String(it.yearOfMfg ?? '').trim() !== '' && !parseYearOfMfgInput(it.yearOfMfg).ok && (
+                          <div style={{ color: '#ff6b6b', fontSize: '0.75rem', marginTop: '2px' }}>
+                            {parseYearOfMfgInput(it.yearOfMfg).msg}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <textarea
                           className={styles.control}
@@ -945,11 +1192,11 @@ function RFDPage() {
   };
 
   return(
-    <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+    <div className={`${styles.page} ${styles.pageScroll}`}>
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>RFD</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>CLOSE</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>BACK</button>
         </div>
       </div>   
       <div className={styles.card}>
@@ -962,7 +1209,10 @@ function RFDPage() {
                 placeholder="PASS NO" 
                 value={passNo} 
                 onChange={(e) => setPassNo(e.target.value)}
-                onFocus={() => setShowSuggestions(true)} // expand again when input is focused 
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); fetchRecord(); }
+                }}
               />
               {showSuggestions && suggestions.length > 0 && (
                 <ul className={styles.suggestionsList}>
@@ -981,7 +1231,7 @@ function RFDPage() {
         </div>
       </div> 
       {record ? (
-        <div className={styles.cardRFD} style={{ marginTop: 12 }}>
+        <div className={`${styles.cardItemOut} ${styles.mt12}`}>
           <div className={styles.formGrid3}>
             <div><b>PRIVATE PASS NO:</b> {record.passNo}</div>
             <div><b>DATE IN:</b> {record.dateIn}</div>
@@ -991,11 +1241,11 @@ function RFDPage() {
             <div><b>UNIT ADDRESS:</b> {record.customer?.unitAddress}</div>
             <div><b>LOCATION:</b> {record.customer?.location}</div>
           </div>
-          <div className={styles.tableWrap} style={{ marginTop: 12, maxHeight: 350, overflowY: 'auto', overflowX: 'auto' }}>
-            <table className={styles.table} style={{ minWidth: 900 }}>
+          <div className={`${styles.tableWrap} ${styles.tableWrapScroll}`}>
+            <table className={`${styles.table} ${styles.tableMin900}`}>
               <thead>
                 <tr>
-                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>RFD</th><th>RFD DATE</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1</th><th>REMARKS 2</th>
+                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>RFD</th><th>RFD DATE</th><th>RECTIFICATION DETAILS</th><th>REMARKS</th><th>Dispatch Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -1005,6 +1255,7 @@ function RFDPage() {
                     <td>{it.itemName}</td>
                     <td>{it.partNumber}</td>
                     <td>{it.serialNumber}</td>
+                    <td>{it.yearOfMfg !== undefined && it.yearOfMfg !== null && it.yearOfMfg !== '' ? it.yearOfMfg : '—'}</td>
                     <td>{it.defectDetails}</td>
                     {/* <td><input type="checkbox" checked={!!it.itemIn} readOnly /></td> */}
                     <td><input type="checkbox" checked={!!it.itemRfd} disabled={it.itemOut === true} onChange={(e) => updateRfd(idx, e.target.checked)} /></td>
@@ -1016,8 +1267,8 @@ function RFDPage() {
                         onChange={(e) => updateDateRfd(idx, e.target.value)}
                         placeholder="SELECT DATE"
                       />
-                      {!it.dateRfd && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
-                      {it.itemRfd && !it.dateRfd && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR RFD</div>}
+                      {!it.dateRfd && <div className={styles.hintNoDate}>NO DATE SET</div>}
+                      {it.itemRfd && !it.dateRfd && <div className={styles.hintRequiredDate}>⚠️ DATE REQUIRED FOR RFD</div>}
                     </td>
                     <td>
                       <textarea
@@ -1030,15 +1281,7 @@ function RFDPage() {
                       {it.itemRfd &&
                         (!it.itemRectificationDetails ||
                           it.itemRectificationDetails.trim() === "") && (
-                          <div
-                            style={{
-                              fontSize: "0.75rem",
-                              color: "#ff6b6b",
-                              marginTop: "2px",
-                            }}
-                          >
-                            ⚠️ Rectification details required for RFD
-                          </div>
+                          <div className={styles.hintRequiredRectification}>⚠️ Rectification details required for RFD</div>
                         )}
                     </td>
                     <td>
@@ -1062,12 +1305,12 @@ function RFDPage() {
               </tbody>
             </table>
           </div>
-          <div className={styles.pageActions} style={{ marginTop: 12 }}>
+          <div className={`${styles.pageActions} ${styles.pageActionsMt12}`}>
             <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={onSubmit}>Save</button>
           </div>
         </div>
       ) : null}
-      {status ? <div className={styles.card} style={{ marginTop: 12, padding: 12 }}>{status}</div> : null}
+      {status ? <div className={`${styles.card} ${styles.statusCard}`}>{status}</div> : null}
     </div>
   );
 }
@@ -1306,11 +1549,11 @@ function ItemOutPage() {
   };
 
   return (
-    <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+    <div className={`${styles.page} ${styles.pageScroll}`}>
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>ITEM OUT</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>CLOSE</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>BACK</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -1323,7 +1566,10 @@ function ItemOutPage() {
                 placeholder="PASS NO" 
                 value={passNo} 
                 onChange={(e) => setPassNo(e.target.value)}
-                onFocus={() => setShowSuggestions(true)} // expand again when input is focused 
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); fetchRecord(); }
+                }}
               />
               {showSuggestions && suggestions.length > 0 && (
                 <ul className={styles.suggestionsList}>
@@ -1342,7 +1588,7 @@ function ItemOutPage() {
         </div>
       </div>
       {record ? (
-        <div className={styles.cardItemOut} style={{ marginTop: 12 }}>
+        <div className={`${styles.cardItemOut} ${styles.mt12}`}>
           <div className={styles.formGrid3}>
             <div><b>PRIVATE PASS NO:</b> {record.passNo}</div>
             <div><b>DATE IN:</b> {record.dateIn}</div>
@@ -1352,11 +1598,11 @@ function ItemOutPage() {
             <div><b>UNIT ADDRESS:</b> {record.customer?.unitAddress}</div>
             <div><b>LOCATION:</b> {record.customer?.location}</div>
           </div>
-          <div className={styles.tableWrap} style={{ marginTop: 12, maxHeight: 350, overflowY: 'auto', overflowX: 'auto' }}>
-            <table className={styles.table} style={{ minWidth: 900 }}>
+          <div className={`${styles.tableWrap} ${styles.tableWrapScroll}`}>
+            <table className={`${styles.table} ${styles.tableMin900}`}>
               <thead>
                 <tr>
-                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>RECTIFICATION DETAILS</th><th>ITEMOUT</th><th>DATE OUT</th><th>REMARKS 1</th><th>REMARKS 2</th>
+                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>RECTIFICATION DETAILS</th><th>ITEMOUT</th><th>DATE OUT</th><th>REMARKS</th><th>Dispatch Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -1365,16 +1611,12 @@ function ItemOutPage() {
                   // Disable only if it was ALREADY itemOut=true in the ORIGINAL DB state (before user edits)
                   const itemOutLocked = originalRecord?.items?.[idx]?.itemOut === true;
                   return (
-                    <tr key={idx}
-                      style={{
-                        opacity: rowDisabled ? 0.5 : 1,
-                        pointerEvents: rowDisabled ? "none" : "auto"
-                      }}
-                    >
+                    <tr key={idx} className={rowDisabled ? styles.rowDisabled : ''}>
                       <td>{it.equipmentType}</td>
                       <td>{it.itemName}</td>
                       <td>{it.partNumber}</td>
                       <td>{it.serialNumber}</td>
+                      <td>{it.yearOfMfg !== undefined && it.yearOfMfg !== null && it.yearOfMfg !== '' ? it.yearOfMfg : '—'}</td>
                       <td>{it.defectDetails}</td>
                       <td>{it.itemRectificationDetails || "-"}</td>
                       {/* <td><input type="checkbox" checked={!!it.itemIn} readOnly /></td> */}
@@ -1387,8 +1629,8 @@ function ItemOutPage() {
                           onChange={(e) => updateDateOut(idx, e.target.value)}
                           placeholder="SELECT DATE"
                         />
-                        {!it.dateOut && <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>NO DATE SET</div>}
-                        {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
+                        {!it.dateOut && <div className={styles.hintNoDate}>NO DATE SET</div>}
+                        {it.itemOut && !it.dateOut && <div className={styles.hintRequiredDate}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
                       </td>
                       <td>
                         <textarea
@@ -1412,12 +1654,12 @@ function ItemOutPage() {
               </tbody>
             </table>
           </div>
-          <div className={styles.pageActions} style={{ marginTop: 12 }}>
+          <div className={`${styles.pageActions} ${styles.pageActionsMt12}`}>
             <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={onSubmit}>Save</button>
           </div>
         </div>
       ) : null}
-      {status ? <div className={styles.card} style={{ marginTop: 12, padding: 12 }}>{status}</div> : null}
+      {status ? <div className={`${styles.card} ${styles.statusCard}`}>{status}</div> : null}
     </div>
   );
 }
@@ -1593,7 +1835,7 @@ function ManageProjects() {
           <div className={styles.page}>
             <div className={styles.pageHeader}>
               <div className={styles.pageTitle}>MANAGE PROJECTS (ADMIN)</div>
-              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>CLOSE</button>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>BACK</button>
             </div>
             <div className={styles.card} style={{ maxWidth: 500, margin: '0 auto', padding: 32 }}>
               <div className={styles.buttonGroup} style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
@@ -1618,7 +1860,7 @@ function ManageProjects() {
           <div className={styles.page}>
             <div className={styles.pageHeader}>
               <div className={styles.pageTitle}>ADD PROJECT</div>
-              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>CLOSE</button>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>BACK</button>
             </div>
             <div className={styles.card} style={{ maxWidth: 1000, margin: '0 auto', padding: 32 }}>
               <div style={{ marginBottom: 16 }}>
@@ -1711,7 +1953,7 @@ function ManageProjects() {
           <div className={styles.page} style={{ height: 'calc(100vh - 120px)', overflowY: 'auto', overflowX: 'auto' }}>
             <div className={styles.pageHeader}>
               <div className={styles.pageTitle}>Select Project</div>
-              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>CLOSE</button>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/manage-projects'); clearForm()}}>BACK</button>
             </div>
             <div className={styles.card} style={{ maxWidth: 1000, margin: '0 auto', padding: 32 }}>
               <div style={{ marginBottom: 16 }}>
@@ -1836,7 +2078,7 @@ function ManageProjects() {
           <div className={styles.pageTitle}>PROJECT LIST</div>
           <div className={styles.pageActions}>
             <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={handleDownloadCSV}>DOWNLOAD CSV</button>
-            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setMode('')}>CLOSE</button>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setMode('')}>BACK</button>
           </div>
         </div>
         <div className={styles.card} style={{ maxHeight: '750px', overflowY: 'auto' }}>
@@ -1872,6 +2114,9 @@ function SearchPage() {
   const [type, setType] = useState('passNo');
   const [fstatus, setFStatus] = useState('All');
   const [value, setValue] = useState('');
+  const [projectPartNo, setProjectPartNo] = useState('');
+  const [partNoSuggestions, setPartNoSuggestions] = useState([]);
+  const [showPartNoSuggestions, setShowPartNoSuggestions] = useState(false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [result, setResult] = useState(null);
@@ -1882,8 +2127,292 @@ function SearchPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [projectOptions, setProjectOptions] = useState([]);
   const suggestionRef = useRef(null);
+  const partNoSuggestionRef = useRef(null);
   const [projectValue, setProjectValue] = useState('');
   // const {MultiSelectAutocomplete} = formElements;
+
+  const allReportColumns = React.useMemo(() => ([
+    { id: 'slNo', label: 'SL NO.' },
+    { id: 'passNo', label: 'PASS NO' },
+    { id: 'projectName', label: 'PROJECT NAME' },
+    { id: 'customerName', label: 'CUSTOMER NAME' },
+    { id: 'customerUnitAddress', label: 'CUSTOMER UNIT ADDRESS' },
+    { id: 'customerLocation', label: 'CUSTOMER LOCATION' },
+    { id: 'customerPhone', label: 'CUSTOMER PHONE' },
+    { id: 'equipmentType', label: 'EQUIPMENT TYPE' },
+    { id: 'itemName', label: 'ITEM NAME' },
+    { id: 'partNumber', label: 'PART NUMBER' },
+    { id: 'serialNumber', label: 'SERIAL NUMBER' },
+    { id: 'yearOfMfg', label: 'YEAR OF MFG' },
+    { id: 'defectDetails', label: 'DEFECT DETAILS' },
+    { id: 'status', label: 'STATUS' },
+    { id: 'dateIn', label: 'DATE IN' },
+    { id: 'dateRfd', label: 'DATE RFD' },
+    { id: 'dateOut', label: 'DATE OUT' },
+    { id: 'rectificationDetails', label: 'RECTIFICATION DETAILS' },
+    { id: 'remarks1', label: 'REMARKS' },
+    { id: 'remarks2', label: 'Dispatch Details' },
+    { id: 'createdBy', label: 'CREATED BY' },
+    { id: 'updatedBy', label: 'UPDATED BY' }
+  ]), []);
+
+  const defaultSelectedReportColumns = React.useMemo(() => ([
+    'slNo',
+    'passNo',
+    'customerUnitAddress',
+    'customerLocation',
+    'itemName',
+    'partNumber',
+    'serialNumber',
+    'yearOfMfg',
+    'status',
+    'dateIn',
+    'dateRfd',
+    'dateOut',
+    'rectificationDetails',
+    'remarks1',
+    'remarks2'
+  ]), []);
+
+  const [selectedReportColumns, setSelectedReportColumns] = useState(defaultSelectedReportColumns);
+
+  const selectedColumnSet = React.useMemo(
+    () => new Set(selectedReportColumns),
+    [selectedReportColumns]
+  );
+
+  const formatDateDDMMYYYY = (dateStr) => {
+    if (!dateStr || typeof dateStr !== 'string') return dateStr || '';
+    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return dateStr;
+    const [, yyyy, mm, dd] = m;
+    return `${dd}-${mm}-${yyyy}`;
+  };
+
+  const [hasViewedReport, setHasViewedReport] = useState(false);
+  // colId -> array of allowed string values. Missing key means "all values".
+  const [columnFilterAllowedValues, setColumnFilterAllowedValues] = useState({});
+  // Draft values while dropdown is open. Applied only on OK.
+  const [columnFilterDraftValues, setColumnFilterDraftValues] = useState({});
+  const [openColumnFilterColId, setOpenColumnFilterColId] = useState(null);
+  const [filterPopoverPos, setFilterPopoverPos] = useState(null);
+  const filterPopoverRef = useRef(null);
+
+  const selectedColumnsForRender = React.useMemo(
+    () => allReportColumns.filter((c) => selectedColumnSet.has(c.id)),
+    [allReportColumns, selectedColumnSet]
+  );
+
+  const columnFilterAllowedSets = React.useMemo(() => {
+    const out = {};
+    for (const [k, v] of Object.entries(columnFilterAllowedValues)) {
+      if (!Array.isArray(v)) continue;
+      out[k] = new Set(v.map((x) => String(x ?? '')));
+    }
+    return out;
+  }, [columnFilterAllowedValues]);
+
+  const getUniqueFilterValues = (targetColId) => {
+    if (!targetColId) return [];
+    const rowsForUniques = allReportRows.filter((r) => {
+      for (const [colId, allowedSet] of Object.entries(columnFilterAllowedSets)) {
+        if (colId === targetColId) continue;
+        if (!allowedSet.has(String(r[colId] ?? ''))) return false;
+      }
+      return true;
+    });
+    const uniqueSet = new Set();
+    rowsForUniques.forEach((r) => uniqueSet.add(String(r[targetColId] ?? '')));
+    const arr = Array.from(uniqueSet);
+    arr.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    return arr;
+  };
+
+  const openColumnFilter = (colId, anchorEvent) => {
+    const uniqueVals = getUniqueFilterValues(colId);
+    const appliedVals = columnFilterAllowedValues[colId];
+    const initialDraft = Array.isArray(appliedVals)
+      ? uniqueVals.filter((v) => new Set(appliedVals.map((x) => String(x ?? ''))).has(String(v ?? '')))
+      : uniqueVals;
+    setColumnFilterDraftValues((prev) => ({ ...prev, [colId]: initialDraft }));
+    if (anchorEvent?.currentTarget) {
+      const r = anchorEvent.currentTarget.getBoundingClientRect();
+      const w = 280;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+      const pad = 12;
+      const maxDesired = 420;
+      const minPreferred = 200;
+      const belowTop = r.bottom + 6;
+      const spaceBelow = window.innerHeight - belowTop - pad;
+      const spaceAbove = r.top - pad;
+      let top;
+      let maxH;
+      if (spaceBelow >= minPreferred || spaceBelow >= spaceAbove) {
+        top = belowTop;
+        maxH = Math.min(maxDesired, Math.max(160, spaceBelow));
+      } else {
+        maxH = Math.min(maxDesired, Math.max(160, spaceAbove));
+        top = Math.max(pad, r.top - maxH - 6);
+      }
+      setFilterPopoverPos({ top, left, width: w, maxHeight: maxH });
+    } else {
+      setFilterPopoverPos(null);
+    }
+    setOpenColumnFilterColId(colId);
+  };
+
+  const cancelColumnFilter = (colId) => {
+    if (!colId) return;
+    setColumnFilterDraftValues((prev) => {
+      const next = { ...prev };
+      delete next[colId];
+      return next;
+    });
+    setOpenColumnFilterColId(null);
+    setFilterPopoverPos(null);
+  };
+
+  const applyColumnFilter = (colId) => {
+    if (!colId) return;
+    const uniqueVals = getUniqueFilterValues(colId);
+    const draftVals = Array.isArray(columnFilterDraftValues[colId]) ? columnFilterDraftValues[colId] : uniqueVals;
+    const draftSet = new Set(draftVals.map((x) => String(x ?? '')));
+    const normalizedDraft = uniqueVals.filter((v) => draftSet.has(String(v ?? '')));
+
+    setColumnFilterAllowedValues((prev) => {
+      if (normalizedDraft.length === uniqueVals.length) {
+        const { [colId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [colId]: normalizedDraft };
+    });
+    cancelColumnFilter(colId);
+  };
+
+  // Remove filters for columns that are no longer selected for display.
+  useEffect(() => {
+    setColumnFilterAllowedValues((prev) => {
+      const next = {};
+      for (const [k, v] of Object.entries(prev || {})) {
+        if (selectedColumnSet.has(k)) next[k] = v;
+      }
+      return next;
+    });
+    setColumnFilterDraftValues((prev) => {
+      const next = {};
+      for (const [k, v] of Object.entries(prev || {})) {
+        if (selectedColumnSet.has(k)) next[k] = v;
+      }
+      return next;
+    });
+    setOpenColumnFilterColId(null);
+    setFilterPopoverPos(null);
+  }, [selectedReportColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const allReportRows = React.useMemo(() => {
+    if (!result || !result.data || result.data.length === 0) return [];
+    const rows = [];
+    result.data.forEach((doc, docIndex) => {
+      const items = doc.items || [];
+      items.forEach((item, itemIndex) => {
+        // Determine status: OUT if itemIn+itemOut are true, else RFD if itemIn+itemRfd and not itemOut, else IN
+        const status =
+          item.itemIn && item.itemOut
+            ? "OUT"
+            : item.itemIn && item.itemRfd && !item.itemOut
+              ? "RFD"
+              : "IN";
+
+        // Format phone number properly
+        const phone = doc.customer?.phone || "";
+        const formattedPhone = phone && !isNaN(phone) ? String(phone) : phone;
+
+        // Format dates for UI (and for filtering/export)
+        const dateInFmt = formatDateDDMMYYYY(doc.dateIn || "");
+        const dateRfdFmt = formatDateDDMMYYYY(item.dateRfd || "");
+        const dateOutFmt = formatDateDDMMYYYY(item.dateOut || "");
+
+        rows.push({
+          rowKey: `${docIndex}-${itemIndex}`,
+          slNo: String(item.serialNo || ""),
+          passNo: String(doc.passNo || ""),
+          projectName: String(doc.projectName || ""),
+          customerName: String(doc.customer?.name || ""),
+          customerUnitAddress: String(doc.customer?.unitAddress || ""),
+          customerLocation: String(doc.customer?.location || ""),
+          customerPhone: String(formattedPhone || ""),
+          yearOfMfg: (() => {
+            const y = item.yearOfMfg ?? doc.yearOfMfg;
+            return y !== undefined && y !== null && y !== '' ? String(y) : '';
+          })(),
+          equipmentType: String(item.equipmentType || ""),
+          itemName: String(item.itemName || ""),
+          partNumber: String(item.partNumber || ""),
+          serialNumber: String(item.serialNumber || ""),
+          defectDetails: String(item.defectDetails || ""),
+          status: String(status || ""),
+          dateIn: String(dateInFmt || ""),
+          dateRfd: String(dateRfdFmt || ""),
+          dateOut: String(dateOutFmt || ""),
+          rectificationDetails: String(item.itemRectificationDetails || ""),
+          remarks1: String(item.itemFeedback1Details || ""),
+          remarks2: String(item.itemFeedback2Details || ""),
+          createdBy: String(doc.createdBy || ""),
+          updatedBy: String(doc.updatedBy || "")
+        });
+      });
+    });
+    return rows;
+  }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const visibleRows = React.useMemo(() => {
+    let rows = allReportRows;
+    for (const [colId, allowedSet] of Object.entries(columnFilterAllowedSets)) {
+      if (!selectedColumnSet.has(colId)) continue; // hidden columns should not affect display
+      rows = rows.filter((r) => allowedSet.has(String(r[colId] ?? '')));
+      // Small optimization: early exit if everything is filtered out
+      if (rows.length === 0) return [];
+    }
+    return rows;
+  }, [allReportRows, columnFilterAllowedSets, selectedColumnSet]);
+
+  useEffect(() => {
+    if (!openColumnFilterColId) return;
+    const onMouseDown = (e) => {
+      if (!filterPopoverRef.current) return;
+      // BACK when clicking outside the open popover.
+      if (!filterPopoverRef.current.contains(e.target)) cancelColumnFilter(openColumnFilterColId);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [openColumnFilterColId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!openColumnFilterColId) return;
+    const onScroll = (e) => {
+      const t = e.target;
+      const pop = filterPopoverRef.current;
+      if (!(t instanceof Element) || !pop) {
+        cancelColumnFilter(openColumnFilterColId);
+        return;
+      }
+      if (t === pop || pop.contains(t)) return;
+      cancelColumnFilter(openColumnFilterColId);
+    };
+    document.addEventListener('scroll', onScroll, true);
+    return () => document.removeEventListener('scroll', onScroll, true);
+  }, [openColumnFilterColId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleReportColumn = (colId) => {
+    setSelectedReportColumns((prev) => {
+      const set = new Set(prev);
+      if (set.has(colId)) set.delete(colId);
+      else set.add(colId);
+      // Avoid empty table/header; keep at least one column.
+      if (set.size === 0) return prev;
+      return Array.from(set);
+    });
+  };
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -1898,17 +2427,34 @@ function SearchPage() {
   }, []);
 
   useEffect(() => {
+    function handleClickOutsidePartNo(e) {
+      if (partNoSuggestionRef.current && !partNoSuggestionRef.current.contains(e.target)) {
+        setShowPartNoSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutsidePartNo);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutsidePartNo);
+    };
+  }, []);
+
+  useEffect(() => {
     console.log("selectionMode changed:", selectionMode);
     if (selectionMode){
       setSelectionMode(false);
       return;
     }
 
-    if (value.length >= 2 && (type === 'DateRange')) {
+    if (type === 'DateRange') {
       setSuggestions([]);
       return;
     }
-    if (value.length >= 2) {
+
+    const digitsOnly = (value || '').toString().replace(/\D/g, '');
+    const shouldFetch =
+      type === 'PhoneNumber' ? digitsOnly.length >= 3 : (value || '').length >= 2;
+
+    if (shouldFetch) {
       const fetchSuggestions = async () => {
         try {
           const params = new URLSearchParams();
@@ -1931,21 +2477,61 @@ function SearchPage() {
     }
   }, [value, type, selectionMode]);
 
+  useEffect(() => {
+    if (type !== 'ProjectName') {
+      setProjectPartNo('');
+      setPartNoSuggestions([]);
+      setShowPartNoSuggestions(false);
+      return;
+    }
+
+    if ((projectPartNo || '').length < 2) {
+      setPartNoSuggestions([]);
+      return;
+    }
+
+    const fetchPartNoSuggestions = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('type', 'ItemPartNo');
+        params.set('value', projectPartNo);
+        const res = await fetch(`${apiBase()}/search/suggestions?${params.toString()}`, { headers: { ...authHeaders() } });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Failed to fetch suggestions');
+        setPartNoSuggestions(data.suggestions || []);
+      } catch (err) {
+        console.error('Error fetching part no suggestions:', err);
+        setPartNoSuggestions([]);
+      }
+    };
+
+    fetchPartNoSuggestions();
+  }, [projectPartNo, type]);
+
   const clearForm = () => {
     setType('passNo');
     setValue('');
+    setProjectPartNo('');
     setFrom('');
     setTo('');
     setResult(null);
     setStatus('');
     setFStatus('All');
+    setHasViewedReport(false);
+    setColumnFilterAllowedValues({});
+    setColumnFilterDraftValues({});
+    setOpenColumnFilterColId(null);
+    setFilterPopoverPos(null);
     setSuggestions([]);
     setShowSuggestions(false);
+    setPartNoSuggestions([]);
+    setShowPartNoSuggestions(false);
     setProjectValue('');
   };
 
   const clearOnChange = () =>{
     setValue('');
+    setProjectPartNo('');
     setFrom('');
     setTo('');
     setFStatus('All');
@@ -1971,6 +2557,7 @@ function SearchPage() {
       }
       if (type === 'serialNumber') params.set('serialProjectName', projectValue);
       if (type !== 'DateRange' && value) params.set('value', value);
+      if (type === 'ProjectName' && projectPartNo.trim()) params.set('partNo', projectPartNo.trim());
       if (from) params.set('from', from);
       if (to) params.set('to', to);
       params.set('status',fstatus);
@@ -1978,42 +2565,56 @@ function SearchPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed');
       setResult(data);
+      setHasViewedReport(true);
+      setColumnFilterAllowedValues({});
+      setColumnFilterDraftValues({});
+      setOpenColumnFilterColId(null);
+      setFilterPopoverPos(null);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
   };
 
   const download = async () => {
+    if (!hasViewedReport) {
+      setStatus('Please view the report first (then download).');
+      return;
+    }
     try {
-      const params = new URLSearchParams();
-      params.set('type', type);
-      if (type !== 'DateRange' && !value) {
-        setStatus('Please enter a value');
-        return;
-      }
-      if (type === 'DateRange' && !from && !to) {
-        setStatus('Please enter a date range');
-        return;
-      }
-      if (type === 'serialNumber' && value.length < 3) {
-        setStatus('Please enter at least 3 characters for Serial Number search');
-        return;
-      }
-      if (type === 'serialNumber') params.set('serialProjectName', projectValue);
-      if (type !== 'DateRange' && value) params.set('value', value);
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-      params.set('status',fstatus);
-      const res = await fetch(`${apiBase()}/search/download?${params.toString()}`, { headers: { ...authHeaders() } });
-      if (!res.ok) throw new Error('Download failed');
-      const blob = await res.blob();
+      const headerLabels = selectedColumnsForRender.map((c) => c.label);
+      const columnIds = selectedColumnsForRender.map((c) => c.id);
+
+      const escapeCsv = (val) => {
+        const s = String(val ?? '');
+        if (s.includes('"')) return `"${s.replace(/"/g, '""')}"`;
+        if (/[,\n]/.test(s)) return `"${s}"`;
+        return s;
+      };
+
+      const lines = [];
+      lines.push(headerLabels.map(escapeCsv).join(','));
+      visibleRows.forEach((row, rowIdx) => {
+        lines.push(columnIds.map((cid) => escapeCsv(cid === 'slNo' ? String(rowIdx + 1) : row[cid])).join(','));
+      });
+
+      const csvContent = lines.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; 
-      const defaultName = `${new Date().toISOString().split('T')[0]}_item_details.csv`;
+      a.href = url;
+
+      const kolkataNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const dd = pad2(kolkataNow.getDate());
+      const mm = pad2(kolkataNow.getMonth() + 1);
+      const yyyy = kolkataNow.getFullYear();
+      const HH = pad2(kolkataNow.getHours());
+      const MI = pad2(kolkataNow.getMinutes());
+      const SS = pad2(kolkataNow.getSeconds());
+      const defaultName = `report_${dd}-${mm}-${yyyy}_${HH}-${MI}-${SS}.csv`;
+
       a.download = defaultName;
       a.click();
-      // a.download = 'search_results.csv'; a.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
@@ -2037,85 +2638,171 @@ function SearchPage() {
     if (!result || !result.data || result.data.length === 0) {
       return null;
     }
+    const leftAligned = new Set(['rectificationDetails', 'remarks1', 'remarks2']);
+
+    const uniqueValuesForOpenColumn = (() => {
+      if (!openColumnFilterColId) return [];
+      return getUniqueFilterValues(openColumnFilterColId);
+    })();
+
+    const openColDraftArr = openColumnFilterColId
+      ? columnFilterDraftValues[openColumnFilterColId]
+      : undefined;
+
+    const openColDraftSet = openColDraftArr
+      ? new Set(openColDraftArr.map((x) => String(x ?? '')))
+      : new Set(uniqueValuesForOpenColumn.map((x) => String(x ?? '')));
+
+    const isAllSelectedForOpenColumn = openColumnFilterColId
+      ? uniqueValuesForOpenColumn.every((v) => openColDraftSet.has(String(v ?? '')))
+      : true;
 
     return (
       <div className={styles.card} style={{ marginTop: 12 }}>
         <div style={{ marginBottom: 12 }}>
           <h3>SEARCH RESULTS ({result.count} ENTRIES FOUND)</h3>
         </div>
-        <div className={styles.tableWrap} style={{ overflowX: 'auto', maxHeight: 450, overflowY: 'auto', overflowX: 'auto' }}>
-          <table className={styles.table} style={{ minWidth: '1400px' }}>
+        <div className={styles.tableWrap} style={{ overflowX: 'auto', maxHeight: 450, overflowY: 'auto', minHeight: 220 }}>
+          <table
+            className={styles.table}
+            style={{ minWidth: selectedColumnsForRender.length <= defaultSelectedReportColumns.length ? '1200px' : '1400px' }}
+          >
             <thead>
               <tr>
-                <th>SL NO.</th>
-                <th>PASS NO</th>
-                <th>PROJECT NAME</th>
-                <th>CUSTOMER NAME</th>
-                <th>CUSTOMER UNIT ADDRESS</th>
-                <th>CUSTOMER LOCATION</th>
-                <th>CUSTOMER PHONE</th>
-                <th>EQUIPMENT TYPE</th>
-                <th>ITEM NAME</th>
-                <th>PART NUMBER</th>
-                <th>SERIAL NUMBER</th>
-                <th>DEFECT DETAILS</th>
-                <th>STATUS</th>
-                <th>DATE IN</th>
-                <th>DATE RFD</th>
-                <th>DATE OUT</th>
-                <th>RECTIFICATION DETAILS</th>
-                <th>REMARKS 1 </th>
-                <th>REMARKS 2 </th>
-                <th>CREATED BY</th>
-                <th>UPDATED BY</th>
+                {selectedColumnsForRender.map((c) => (
+                  <th key={c.id} style={{ position: 'sticky', top: 0, zIndex: 4, background: '#fff', boxShadow: '0 1px 0 #e5e7eb' }}>
+                    <div className={styles.reportTh}>
+                      <span>{c.label}</span>
+                      {c.id !== 'slNo' ? (
+                        <button
+                          type="button"
+                          title="Filter column"
+                          aria-label={`Filter ${c.label}`}
+                          className={styles.columnFilterIconBtn}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (openColumnFilterColId === c.id) {
+                              cancelColumnFilter(c.id);
+                            } else {
+                              openColumnFilter(c.id, e);
+                            }
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                            <path fill="currentColor" d="M2.5 4.5h7L6 8z" />
+                          </svg>
+                        </button>
+                      ) : null}
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {result.data.map((doc, docIndex) => {
-                const items = doc.items || [];
-                return items.map((item, itemIndex) => {
-                  // Determine status: OUT if all itemIn, itemRfd, and itemOut are true, else IN
-                  const status = item.itemIn && item.itemOut ? "OUT" : item.itemIn && item.itemRfd && !item.itemOut ? "RFD" : "IN";
-                  
-                  // Format phone number properly
-                  const phone = doc.customer?.phone || "";
-                  const formattedPhone = phone && !isNaN(phone) ? String(phone) : phone;
-                  
-                  // Format dates
-                  const dateIn = doc.dateIn || "";
-                  const dateRfd = item.dateRfd || "";
-                  const dateOut = item.dateOut || "";
-                  
-                  return (
-                    <tr key={`${docIndex}-${itemIndex}`}>
-                      <td>{item.serialNo || ""}</td>
-                      <td>{doc.passNo || ""}</td>
-                      <td>{doc.projectName || ""}</td>
-                      <td>{doc.customer?.name || ""}</td>
-                      <td>{doc.customer?.unitAddress || ""}</td>
-                      <td>{doc.customer?.location || ""}</td>
-                      <td>{formattedPhone}</td>
-                      <td>{item.equipmentType || ""}</td>
-                      <td>{item.itemName || ""}</td>
-                      <td>{item.partNumber || ""}</td>
-                      <td>{item.serialNumber || ""}</td>
-                      <td>{item.defectDetails || ""}</td>
-                      <td>{status}</td>
-                      <td>{dateIn}</td>
-                      <td>{dateRfd}</td>
-                      <td>{dateOut}</td>
-                      <td style={{textAlign: 'left'}}>{item.itemRectificationDetails || ""}</td>
-                      <td style={{textAlign: 'left'}}>{item.itemFeedback1Details || ""}</td>
-                      <td style={{textAlign: 'left'}}>{item.itemFeedback2Details || ""}</td>
-                      <td>{doc.createdBy || ""}</td>
-                      <td>{doc.updatedBy || ""}</td>
-                    </tr>
-                  );
-                });
-              })}
+              {visibleRows.map((row, rowIdx) => (
+                <tr key={row.rowKey}>
+                  {selectedColumnsForRender.map((col) => (
+                    <td
+                      key={col.id}
+                      style={leftAligned.has(col.id) ? { textAlign: 'left' } : undefined}
+                    >
+                      {col.id === 'slNo' ? String(rowIdx + 1) : (row[col.id] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+        {openColumnFilterColId && filterPopoverPos
+          ? createPortal(
+              <div
+                ref={filterPopoverRef}
+                role="dialog"
+                aria-modal="true"
+                onWheel={(e) => e.stopPropagation()}
+                style={{
+                  position: 'fixed',
+                  top: filterPopoverPos.top,
+                  left: filterPopoverPos.left,
+                  width: filterPopoverPos.width || 280,
+                  maxHeight: filterPopoverPos.maxHeight ?? 420,
+                  zIndex: 2147483000,
+                  boxSizing: 'border-box',
+                }}
+                className={styles.columnFilterPopoverPortal}
+              >
+                <div className={styles.columnFilterPopoverTitle}>
+                  Filter {allReportColumns.find((x) => x.id === openColumnFilterColId)?.label || ''}
+                </div>
+                <div className={styles.columnFilterPopoverScroll}>
+                  <div className={styles.columnFilterValueList}>
+                    <label className={styles.columnFilterValueItem}>
+                      <input
+                        type="checkbox"
+                        checked={isAllSelectedForOpenColumn}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setColumnFilterDraftValues((prev) => ({
+                            ...prev,
+                            [openColumnFilterColId]: checked ? [...uniqueValuesForOpenColumn] : [],
+                          }));
+                        }}
+                      />
+                      <span>Select All</span>
+                    </label>
+                    {uniqueValuesForOpenColumn.length === 0 ? (
+                      <div className={styles.columnFilterEmpty}>No values</div>
+                    ) : (
+                      uniqueValuesForOpenColumn.map((val) => {
+                        const valueStr = String(val ?? '');
+                        const displayVal = valueStr === '' ? '(Blank)' : valueStr;
+                        const checked = openColDraftSet.has(valueStr);
+                        return (
+                          <label key={valueStr} className={styles.columnFilterValueItem}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const nextChecked = e.target.checked;
+                                setColumnFilterDraftValues((prev) => {
+                                  const baseSet = new Set(
+                                    (prev?.[openColumnFilterColId] || uniqueValuesForOpenColumn).map((x) => String(x ?? ''))
+                                  );
+                                  if (nextChecked) baseSet.add(valueStr);
+                                  else baseSet.delete(valueStr);
+                                  return { ...prev, [openColumnFilterColId]: Array.from(baseSet) };
+                                });
+                              }}
+                            />
+                            <span title={displayVal}>{displayVal}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+                <div className={styles.columnFilterPopoverFooter}>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnPrimary}`}
+                    onClick={() => applyColumnFilter(openColumnFilterColId)}
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnGhost}`}
+                    onClick={() => cancelColumnFilter(openColumnFilterColId)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
       </div>
     );
   };
@@ -2125,7 +2812,7 @@ function SearchPage() {
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>REPORT</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>CLOSE</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>BACK</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -2139,6 +2826,7 @@ function SearchPage() {
               <option value="passNo">PRIVATE PASS NO</option>
               <option value="ItemPartNo">PART NO</option>
               <option value="ProjectName">PROJECT NAME</option>
+              <option value="PhoneNumber">PHONE NUMBER</option>
               <option value="DateRange">DATE RANGE</option>
               <option value="serialNumber">SERIAL NUMBER</option>
             </select>
@@ -2146,16 +2834,43 @@ function SearchPage() {
           {type === 'DateRange' ? null : (
 
             <label className={styles.label}>
-              {type === 'passNo' ? 'PRIVATE PASS NO' : type === 'ItemPartNo' ? 'PART NO' : type === 'serialNumber' ? 'SERIAL NUMBER' : 'PROJECT NAME'}
+              {type === 'passNo' ? 'PRIVATE PASS NO' : type === 'ItemPartNo' ? 'PART NO' : type === 'PhoneNumber' ? 'PHONE NUMBER' : type === 'serialNumber' ? 'SERIAL NUMBER' : 'PROJECT NAME'}
               {type === 'ProjectName' ?
-                <select 
-                  className={styles.control} 
-                  value={value} 
-                  onChange={(e) => {setValue(e.target.value)}}
-                  onFocus={fetchProjects} required>
-                  <option value="">SELECT PROJECT</option>
-                  {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
-                </select>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <select
+                    className={styles.control}
+                    value={value}
+                    onChange={(e) => {setValue(e.target.value)}}
+                    onFocus={fetchProjects} required
+                  >
+                    <option value="">SELECT PROJECT</option>
+                    {projectOptions.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
+                  </select>
+                  <div className={styles.relativeContainer} ref={partNoSuggestionRef}>
+                    <input
+                      className={styles.control}
+                      value={projectPartNo}
+                      placeholder="OPTIONAL PART NO"
+                      onFocus={() => setShowPartNoSuggestions(true)}
+                      onChange={(e) => setProjectPartNo(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          runSearch();
+                        }
+                      }}
+                    />
+                    {showPartNoSuggestions && partNoSuggestions.length > 0 && (
+                      <ul className={styles.suggestionsList}>
+                        {partNoSuggestions.map((s, i) => (
+                          <li key={i} onClick={() => { setProjectPartNo(s); setShowPartNoSuggestions(false); }}>
+                            {s}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
                 :
                 <div className={styles.relativeContainer} ref={suggestionRef}>
                   <input
@@ -2163,6 +2878,12 @@ function SearchPage() {
                     value={value}
                     onFocus={() => setShowSuggestions(true)} // expand again when input is focused
                     onChange={(e) => setValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        runSearch();
+                      }
+                    }}
                   />
                   {showSuggestions && suggestions.length > 0 && (
                     <ul className={styles.suggestionsList}>
@@ -2207,14 +2928,62 @@ function SearchPage() {
           )}
           {type != 'passNo' && type != 'serialNumber' && (
             <div className={styles.formGrid2}>
-              <label className={styles.label}>From<input className={styles.control} type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-              <label className={styles.label}>To<input className={styles.control} type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+              <label className={styles.label}>From
+                <input
+                  className={styles.control}
+                  type="date"
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      runSearch();
+                    }
+                  }}
+                />
+              </label>
+              <label className={styles.label}>To
+                <input
+                  className={styles.control}
+                  type="date"
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      runSearch();
+                    }
+                  }}
+                />
+              </label>
             </div>
           )}
         </div>
+        <div className={styles.columnSelectWrap}>
+          <div className={styles.columnSelectTitle}>Select Columns</div>
+          <div className={styles.columnSelectGrid}>
+            {allReportColumns.map((c) => (
+              <label key={c.id} className={styles.columnSelectItem}>
+                <input
+                  type="checkbox"
+                  checked={selectedColumnSet.has(c.id)}
+                  onChange={() => toggleReportColumn(c.id)}
+                />
+                <span>{c.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
         <div className={styles.pageActions}>
           <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={runSearch}>VIEW ALL RECORDS</button>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={download}>DOWNLOAD REPORT</button>
+          <button
+            className={`${styles.btn} ${styles.btnGhost}`}
+            onClick={download}
+            disabled={!hasViewedReport}
+            title={!hasViewedReport ? 'View the report first to enable download' : 'Download the currently visible (filtered) data'}
+          >
+            DOWNLOAD REPORT
+          </button>
           <button
             type="button"
             className={`${styles.btn} ${styles.btnPrimary} ${styles.resetBtn}`}
@@ -2243,7 +3012,7 @@ function SearchPage() {
           }}
         >
           {/* Optional placeholder text */}
-          <span>No records loaded yet</span>
+          <span>{hasViewedReport ? 'No records found' : 'No records loaded yet'}</span>
         </div>
       )}
     </div>
@@ -2251,11 +3020,13 @@ function SearchPage() {
 }
 
 function EditPage() {
+  const MAX_ITEMS_PER_PASS = 20;
   const [passNo, setPassNo] = useState('');
   const [doc, setDoc] = useState({
     passNo: "",
     projectName: "",
     dateIn: "",
+    yearOfMfg: "",
     customer: { name: "", phone: "", unitAddress: "", location: "" },
     items: []
   });
@@ -2263,6 +3034,7 @@ function EditPage() {
     passNo: "",
     projectName: "",
     dateIn: "",
+    yearOfMfg: "",
     customer: { name: "", phone: "", unitAddress: "", location: "" },
     items: []
   }); // To store original data for change detection
@@ -2431,6 +3203,7 @@ function EditPage() {
       itemName: src.itemName || '',
       partNumber: src.partNumber || '',
       serialNumber: '',
+      yearOfMfg: '',
       defectDetails: '',
       itemTypeOptions: [],
       itemNameOptions: [],
@@ -2465,6 +3238,7 @@ function EditPage() {
       passNo: "",
       projectName: "",
       dateIn: "",
+      yearOfMfg: "",
       customer: { name: "", phone: "", unitAddress: "", location: "" },
       items: []
     });
@@ -2512,6 +3286,7 @@ function EditPage() {
         passNo: "",
         projectName: "",
         dateIn: "",
+        yearOfMfg: "",
         customer: { name: "", phone: "", unitAddress: "", location: "" },
         items: []
       });
@@ -2568,7 +3343,11 @@ function EditPage() {
   };
 
   const addItem = () => {
-    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: '', itemName: '', partNumber: '', serialNumber: '', defectDetails: '', itemIn: true, itemOut: false, itemRfd: false, dateOut: null, dateRfd: null, itemRectificationDetails: '', itemFeedback1Details: '', itemFeedback2Details: ''}] }));
+    if ((doc?.items?.length || 0) >= MAX_ITEMS_PER_PASS) {
+      alert(`Maximum ${MAX_ITEMS_PER_PASS} items are allowed per pass.`);
+      return;
+    }
+    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: '', itemName: '', partNumber: '', serialNumber: '', yearOfMfg: '', defectDetails: '', itemIn: true, itemOut: false, itemRfd: false, dateOut: null, dateRfd: null, itemRectificationDetails: '', itemFeedback1Details: '', itemFeedback2Details: ''}] }));
   };
 
   const deleteItem = (idx) => {
@@ -2583,6 +3362,11 @@ function EditPage() {
 
   const submitChanges = async () => {
     if (!doc) return;
+
+    if ((doc?.items?.length || 0) > MAX_ITEMS_PER_PASS) {
+      alert(`Maximum ${MAX_ITEMS_PER_PASS} items are allowed per pass.`);
+      return;
+    }
     
     // Validate required fields
     if (!doc?.customer?.name || doc?.customer.name.trim() === '') {
@@ -2600,7 +3384,15 @@ function EditPage() {
       alert('Please enter a valid 10-digit phone number (e.g., 9876543210)');
       return;
     }
-    
+
+    for (let i = 0; i < (doc?.items?.length || 0); i++) {
+      const yr = parseYearOfMfgInput(doc.items[i]?.yearOfMfg ?? '');
+      if (!yr.ok) {
+        alert(`Item ${i + 1}: ${yr.msg}`);
+        return;
+      }
+    }
+
     const itemsWithoutDetails = doc.items.filter(item => item.itemRfd && (!item.itemRectificationDetails || item.itemRectificationDetails.trim() === ''));
     if (itemsWithoutDetails.length > 0) {
       alert('Please enter rectification details for all items marked as "Item RFD"');
@@ -2627,7 +3419,18 @@ function EditPage() {
     
     setStatus('');
     try {
-      const payload = { dateIn: doc?.dateIn, customer: doc?.customer, projectName: doc?.projectName, items: doc?.items };
+      const payload = {
+        dateIn: doc?.dateIn,
+        customer: doc?.customer,
+        projectName: doc?.projectName,
+        items: doc?.items?.map((row) => {
+          const yr = parseYearOfMfgInput(row.yearOfMfg ?? '');
+          return {
+            ...row,
+            yearOfMfg: yr.ok ? yr.value : null,
+          };
+        }),
+      };
       const res = await fetch(`${apiBase()}/items/${encodeURIComponent(doc?.passNo)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(payload)
       });
@@ -2670,7 +3473,7 @@ function EditPage() {
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>EDIT/VIEW</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>CLOSE</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>BACK</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -2683,7 +3486,10 @@ function EditPage() {
                 placeholder="PASS NO" 
                 value={passNo} 
                 onChange={(e) => setPassNo(e.target.value)}
-                onFocus={() => setShowSuggestions(true)} // expand again when input is focused 
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); fetchDoc(); }
+                }}
               />
               {showSuggestions && suggestions.length > 0 && (
                 <ul className={styles.suggestionsList}>
@@ -2750,7 +3556,7 @@ function EditPage() {
               <table className={styles.table} style={{ minWidth: '1200px' }}>
                 <thead>
                   <tr>
-                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>DEFECT</th><th>ITEMOUT</th><th>RFD</th><th>DATE OUT</th><th>DATE RFD</th><th>RECTIFICATION DETAILS</th><th>REMARKS 1 DETAILS</th><th>REMARKS 2 DETAILS</th>
+                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>ITEMOUT</th><th>RFD</th><th>DATE OUT</th><th>DATE RFD</th><th>RECTIFICATION DETAILS</th><th>REMARKS</th><th>Dispatch Details</th>
                     {isEditing && <th style={{ minWidth: '100px', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
@@ -2791,6 +3597,22 @@ function EditPage() {
                         </select>
                       </td>
                       <td><input className={styles.control} value={(it.serialNumber || '').toUpperCase()} onChange={(e) => updateItem(idx, 'serialNumber', e.target.value)} readOnly={!isEditing} required /></td>
+                      <td>
+                        <input
+                          className={styles.control}
+                          type="text"
+                          inputMode="numeric"
+                          value={it.yearOfMfg !== undefined && it.yearOfMfg !== null ? String(it.yearOfMfg) : ''}
+                          onChange={(e) => updateItem(idx, 'yearOfMfg', e.target.value)}
+                          readOnly={!isEditing}
+                          placeholder="2000–2100"
+                        />
+                        {String(it.yearOfMfg ?? '').trim() !== '' && !parseYearOfMfgInput(it.yearOfMfg).ok && (
+                          <div style={{ color: '#ff6b6b', fontSize: '0.75rem', marginTop: '2px' }}>
+                            {parseYearOfMfgInput(it.yearOfMfg).msg}
+                          </div>
+                        )}
+                      </td>
                       <td><input className={styles.control} value={it.defectDetails || ''} onChange={(e) => updateItem(idx, 'defectDetails', e.target.value)} readOnly={!isEditing} /></td>
                       <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!it.itemOut} onChange={(e) => updateItem(idx, 'itemOut', e.target.checked)} disabled={!isEditing} /></td>
                       <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!it.itemRfd} onChange={(e) => updateItem(idx, 'itemRfd', e.target.checked)} disabled={!isEditing} /></td>
@@ -3088,12 +3910,39 @@ function App() {
             <AdminAddUserPage />
           </ProtectedRoute>
         } />
+        <Route path="/admin/reset-password" element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminResetPasswordPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/change-password" element={
+          <ProtectedRoute>
+            <UserChangePasswordPage />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/manage-projects" element={
           <ProtectedRoute requiredRole="admin">
             <ManageProjects />
           </ProtectedRoute>
         } />
-        <Route path="/admin/admin-Dashboard" element={
+        <Route path="/admin/manage-stores" element={
+          <ProtectedRoute requiredRole="admin">
+            <ManageStores />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/spares-master-list" element={
+          <ProtectedRoute requiredRole="admin">
+            <div className={styles.inventoryLayout}>
+              <Sidebar />
+              <div className={styles.inventoryMain}>
+                <Header />
+                <SparesMasterListPage adminMode />
+                <Footer />
+              </div>
+            </div>
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/admin-dashboard" element={
           <ProtectedRoute requiredRole="admin">
             <AdminDashboard />
           </ProtectedRoute>
@@ -3137,8 +3986,8 @@ function App() {
           </ProtectedRoute>
         } />
         <Route path="/spares/spares-master-list" element={
-          <ProtectedRoute requiredRole="user">
-            <SparesMasterListPage />
+          <ProtectedRoute requiredRole="admin">
+            <Navigate to="/admin/spares-master-list" replace />
           </ProtectedRoute>
         } />
         <Route path="/spares/spares-in" element={

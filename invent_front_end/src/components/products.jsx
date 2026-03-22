@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import styles from './styles.module.css';
 import ProductsTable from './productsTable';
+import { apiBase } from '../apiConfig';
 
 function Products({ onAddNew }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   useEffect(() => {
-    fetch('http://localhost:8000/api/items/')
+    fetch(`${apiBase()}/items/`)
       .then(response => response.json())
       .then(data => setResults(data))
       .catch(error => console.error('Error:', error));

@@ -2,6 +2,7 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 from pymongo import MongoClient
+from bson import ObjectId
 import traceback
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -9,6 +10,8 @@ import secrets
 import hashlib
 import csv
 from io import StringIO,BytesIO
+import re
+import zipfile
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Alignment, Font, Border, Side
 from openpyxl.utils import get_column_letter
@@ -27,6 +30,7 @@ spares_master = db["spares_master"]   # master list
 spares_in_col = db["spares_in"]       # logs table
 spares_out_col = db["spares_out"]  # logs table
 spares_audit = db["spares_audit"]
+spares_stores_col = db["spares_stores"]  # { "name": str, ... }
 
 # Admin Projects collection
 admin_projects_collection = db["admin_projects"]
@@ -191,7 +195,9 @@ def admin_get_projects(request):
         return JsonResponse({"error": "Only GET allowed"}, status=405)
     try:
         projects = list(admin_projects_collection.find({}, {"_id": 0, "projectName": 1}))
-        return JsonResponse({"projects": [p["projectName"] for p in projects]})
+        project_names = [p.get("projectName") for p in projects if p.get("projectName") is not None]
+        project_names_sorted = sorted(project_names, key=lambda s: str(s).casefold())
+        return JsonResponse({"projects": project_names_sorted})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -212,6 +218,41 @@ def admin_get_project_items(request):
         return JsonResponse({"items": doc.get("items", [])})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_backup_mongo(request):
+    """
+    Admin-only backup: export every MongoDB collection as JSON (one JSON per collection)
+    and return them as a single ZIP download.
+    """
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    try:
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+        date_part = now.strftime("%d-%m-%Y")
+
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for collection_name in db.list_collection_names():
+                coll = db[collection_name]
+                docs = list(coll.find({}))
+                json_text = json.dumps(docs, default=str, ensure_ascii=False, indent=2)
+                json_filename = f"{collection_name}_{date_part}.json"
+                zf.writestr(json_filename, json_text)
+
+        zip_buffer.seek(0)
+        response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="mongo_backup_{date_part}.zip"'
+        return response
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        return JsonResponse({"error": str(e), "stack_trace": stack_trace}, status=500)
 
 # Bootstrap a default admin user if none exists
 try:
@@ -443,7 +484,80 @@ def admin_add_user(request):
         error_response = {"error": str(e)}
         log_api_response("admin_add_user", request.method, getattr(request, 'body', None), {**error_response, "stack_trace": stack_trace})
         return JsonResponse(error_response, status=500)
- 
+
+
+@csrf_exempt
+def admin_reset_password(request):
+    """Admin-only: reset any user's password by username."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or b"{}")
+        username = (body.get("username") or "").strip().lower()
+        new_password = body.get("new_password") or ""
+
+        if not username:
+            return JsonResponse({"error": "username is required"}, status=400)
+        if not new_password or len(new_password) < 4:
+            return JsonResponse({"error": "new_password must be at least 4 characters"}, status=400)
+
+        target = users_collection.find_one({"username": username})
+        if not target:
+            return JsonResponse({"error": "User not found"}, status=404)
+
+        users_collection.update_one(
+            {"username": username},
+            {"$set": {"password_hash": hash_password(new_password)}}
+        )
+        return JsonResponse({"message": "Password reset successfully", "username": username})
+    except Exception as e:
+        stack = traceback.format_exc()
+        return JsonResponse({"error": str(e), "stack_trace": stack}, status=500)
+
+
+@csrf_exempt
+def user_change_password(request):
+    """Authenticated user changes their own password (current + new + confirm)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or b"{}")
+        current_password = body.get("current_password") or ""
+        new_password = body.get("new_password") or ""
+        confirm_password = body.get("confirm_password") or ""
+
+        if not current_password:
+            return JsonResponse({"error": "current_password is required"}, status=400)
+        if not new_password or len(new_password) < 4:
+            return JsonResponse({"error": "new_password must be at least 4 characters"}, status=400)
+        if new_password != confirm_password:
+            return JsonResponse({"error": "new_password and confirm_password do not match"}, status=400)
+
+        uid = user.get("id")
+        doc = users_collection.find_one({"_id": ObjectId(uid)}) if uid else None
+        if not doc:
+            return JsonResponse({"error": "User not found"}, status=404)
+        if doc.get("password_hash") != hash_password(current_password):
+            return JsonResponse({"error": "Current password is incorrect"}, status=400)
+
+        users_collection.update_one(
+            {"_id": ObjectId(uid)},
+            {"$set": {"password_hash": hash_password(new_password)}}
+        )
+        return JsonResponse({"message": "Password changed successfully"})
+    except Exception as e:
+        stack = traceback.format_exc()
+        return JsonResponse({"error": str(e), "stack_trace": stack}, status=500)
 
 
 # ----------------------
@@ -470,6 +584,7 @@ def items_in(request):
         }
         project_name = body.get("projectName")
         items = body.get("items") or []
+        year_raw = body.get("yearOfMfg")  # legacy: applied to items missing yearOfMfg
 
         if not pass_no:
             response = {"error": "passNo is required"}
@@ -482,9 +597,22 @@ def items_in(request):
             log_api_response("items_in", request.method, {"passNo": pass_no}, response)
             return JsonResponse(response, status=409)
 
+        legacy_pass_year = None
+        if year_raw not in (None, ""):
+            legacy_pass_year, yerr = _parse_optional_year_mfg_value(year_raw)
+            if yerr:
+                return yerr
+
         normalized_items = []
         for it in items:
-            normalized_items.append({
+            yr_raw = it.get("yearOfMfg")
+            if yr_raw in (None, "") and legacy_pass_year is not None:
+                yr_raw = legacy_pass_year
+            y_item, yerr = _parse_optional_year_mfg_value(yr_raw)
+            if yerr:
+                return yerr
+
+            row = {
                 "equipmentType": it.get("equipmentType"),
                 "itemName": it.get("itemName"),
                 "partNumber": it.get("partNumber"),
@@ -496,8 +624,11 @@ def items_in(request):
                 "itemRectificationDetails": "",  # New field for rectification details
                 "itemFeedback1Details": "",  # New field for feedback 1 details
                 "itemFeedback2Details": "",  # New field for feedback 2 details
-            })
-        
+            }
+            if y_item is not None:
+                row["yearOfMfg"] = y_item
+            normalized_items.append(row)
+
         # Sort items by part number in ascending order
         normalized_items.sort(key=lambda x: x.get("partNumber", ""))
 
@@ -542,7 +673,11 @@ def get_item_by_passno(request, pass_no):
             response = {"error": "Not found"}
             log_api_response("get_item_by_passno", request.method, {"passNo": pass_no}, response)
             return JsonResponse(response, status=404)
-        
+
+        # Normalize legacy fields on read (RFC/RFD + Remarks 2 compatibility)
+        _normalize_items_on_read(doc.get("items", []))
+        _attach_legacy_year_mfg(doc)
+
         log_api_response("get_item_by_passno", request.method, {"passNo": pass_no}, doc)
         return JsonResponse(doc, safe=False)
     except Exception as e:
@@ -747,6 +882,11 @@ def edit_record(request, pass_no):
                 response = {"error": "Entry Not found"}
                 log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
                 return JsonResponse(response, status=404)
+
+            # Normalize legacy fields on read (RFC/RFD + Remarks 2 compatibility)
+            _normalize_items_on_read(doc.get("items", []))
+            _attach_legacy_year_mfg(doc)
+
             log_api_response("edit_record", request.method, {"passNo": pass_no}, doc)
             return JsonResponse(doc, safe=False)
         elif request.method == "PUT":
@@ -758,7 +898,7 @@ def edit_record(request, pass_no):
 
             allowed_fields = ["dateIn", "customer", "projectName", "items"]
             set_fields = {k: v for k, v in body.items() if k in allowed_fields}
-            
+
             # Sort items by part number if items are being updated
             if "items" in set_fields:
                 for item in set_fields["items"]:
@@ -773,6 +913,14 @@ def edit_record(request, pass_no):
                         item["itemFeedback1Details"] = ""
                     if "itemFeedback2Details" not in item:
                         item["itemFeedback2Details"] = ""
+                    raw_y = item.get("yearOfMfg")
+                    if raw_y in (None, ""):
+                        item.pop("yearOfMfg", None)
+                    else:
+                        y, yerr = _parse_optional_year_mfg_value(raw_y)
+                        if yerr:
+                            return yerr
+                        item["yearOfMfg"] = y
                 set_fields["items"].sort(key=lambda x: x.get("partNumber", ""))
             
             set_fields["updatedAt"] = datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -808,6 +956,118 @@ def edit_record(request, pass_no):
 # ----------------------
 # Search + download
 # ----------------------
+
+def _normalize_item_fields_on_read(item: dict):
+    """
+    Normalize legacy DB keys without modifying stored documents.
+    - RFC -> RFD compatibility
+    - remarks_2 / "Handed Over To / Dispatched Details" -> itemFeedback2Details
+    """
+    if not isinstance(item, dict):
+        return item
+
+    # RFC -> RFD compatibility (read-time normalization only)
+    # If either flag is set, treat it as RFD for UI/reporting purposes.
+    rfd_status = item.get("itemRfd", None)
+    rfc_status = item.get("itemRfc", None)
+    if rfc_status in (None, ""):
+        rfc_status = item.get("itemRFC", None)
+
+    if rfd_status in (None, "", False) and rfc_status not in (None, "", False):
+        item["itemRfd"] = rfc_status
+
+    rfd_date = item.get("dateRfd", None)
+    rfc_date = item.get("dateRfc", None)
+    if rfc_date in (None, ""):
+        rfc_date = item.get("dateRFC", None)
+
+    if rfd_date in (None, "", False) and rfc_date not in (None, "", False):
+        item["dateRfd"] = rfc_date
+
+    # Remarks 2 compatibility (read-time normalization only)
+    if ("itemFeedback2Details" not in item) or (item.get("itemFeedback2Details") in (None, "")):
+        feedback2 = item.get("remarks_2")
+        if feedback2 in (None, ""):
+            feedback2 = item.get("Handed Over To / Dispatched Details")
+        if feedback2 is not None:
+            item["itemFeedback2Details"] = feedback2
+
+    return item
+
+
+def _normalize_items_on_read(items):
+    if not isinstance(items, list):
+        return items
+    for it in items:
+        _normalize_item_fields_on_read(it)
+    return items
+
+
+def _attach_legacy_year_mfg(doc):
+    """Attach doc-level yearOfMfg to items missing per-item value (read-time only)."""
+    if not isinstance(doc, dict):
+        return
+    legacy = doc.get("yearOfMfg")
+    if legacy in (None, "", False):
+        return
+    items = doc.get("items")
+    if not isinstance(items, list):
+        return
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        if it.get("yearOfMfg") in (None, "", False):
+            it["yearOfMfg"] = legacy
+
+
+def _parse_optional_year_mfg_value(raw):
+    """
+    Parse optional year for a single item.
+    Returns (year_int_or_none, error_response_or_none).
+    """
+    if raw in (None, ""):
+        return None, None
+    try:
+        y = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None, JsonResponse(
+            {"error": "Year of MFG must be a whole number between 2000 and 2100"},
+            status=400,
+        )
+    if y < 2000 or y > 2100:
+        return None, JsonResponse(
+            {"error": "Year of MFG must be between 2000 and 2100"},
+            status=400,
+        )
+    return y, None
+
+
+def _format_date_ddmmyyyy(date_value):
+    """
+    UI-only formatting helper for generated Excel downloads.
+    Does not alter DB storage format.
+    """
+    if not date_value:
+        return ""
+    try:
+        if isinstance(date_value, str):
+            # Common ISO format: YYYY-MM-DD...
+            if re.match(r"^\d{4}-\d{2}-\d{2}", date_value):
+                base = date_value[:10]
+                yyyy, mm, dd = base.split("-")
+                return f"{dd}-{mm}-{yyyy}"
+            # Already dd-mm-yyyy
+            if re.match(r"^\d{2}-\d{2}-\d{4}$", date_value.strip()):
+                return date_value.strip()
+            return date_value
+
+        if isinstance(date_value, datetime):
+            return date_value.strftime("%d-%m-%Y")
+    except Exception:
+        return str(date_value)
+    return str(date_value)
+
+
 def _build_date_filter(from_str: str | None, to_str: str | None):
     if not from_str and not to_str:
         return None
@@ -822,6 +1082,7 @@ def _build_date_filter(from_str: str | None, to_str: str | None):
 def _build_search_query(params):
     search_type = params.get("type")
     value = params.get("value")
+    part_no_filter = (params.get("partNo") or params.get("part_no") or "").strip()
     from_date = params.get("from")
     to_date = params.get("to")
     serialProjectName = params.get("serialProjectName")
@@ -836,6 +1097,14 @@ def _build_search_query(params):
         query["items.partNumber"] = value
     elif search_type == "ProjectName" and value:
         query["projectName"] = {"$regex": value, "$options": "i"}
+        if part_no_filter:
+            # Optional additional filter when searching by Project Name
+            query["items.partNumber"] = part_no_filter
+    elif search_type == "PhoneNumber" and value:
+        # Phone numbers may be stored as strings or numbers; try prefix regex first.
+        phone_digits = re.sub(r"\D+", "", str(value))
+        if phone_digits:
+            query["customer.phone"] = {"$regex": f"^{phone_digits}"}
     elif search_type == "DateRange":
         pass  # only date filter
     date_cond = _build_date_filter(from_date, to_date)
@@ -906,6 +1175,7 @@ def _shape_search_result(doc):
         "projectName": doc.get("projectName"),
         "dateIn": doc.get("dateIn"),
         "customer": doc.get("customer", {}),
+        "yearOfMfg": doc.get("yearOfMfg"),
         "items": doc.get("items", []),
         "createdBy": doc.get("createdBy", ""),
         "updatedBy": doc.get("updatedBy", ""),
@@ -931,14 +1201,27 @@ def search(request):
         search_type = params.get("type")
         search_value = params.get("value")
         status = params.get("status")  # "In" or "Out"
+        part_no_filter = (params.get("partNo") or params.get("part_no") or "").strip()
 
         for doc in docs:
             filtered_items = doc.get("items", [])
+
+            # Normalize legacy fields (RFC/RFD + Remarks 2 compatibility)
+            _normalize_items_on_read(filtered_items)
+
+            # Phone number matching fallback (covers numeric stored phone fields)
+            if search_type == "PhoneNumber" and search_value:
+                phone_digits = re.sub(r"\D+", "", str(search_value))
+                doc_phone_digits = re.sub(r"\D+", "", str(doc.get("customer", {}).get("phone", "") or ""))
+                if phone_digits and not re.match(rf"^{re.escape(phone_digits)}", doc_phone_digits):
+                    continue
 
             if search_type == "serialNumber" and search_value:
                 filtered_items = _filter_serial(filtered_items, serial_substring=search_value, status=status)
             elif search_type == "ItemPartNo" and search_value:
                 filtered_items = _filter_items(filtered_items, part_number=search_value, status=status)
+            elif search_type == "ProjectName" and part_no_filter:
+                filtered_items = _filter_items(filtered_items, part_number=part_no_filter, status=status)
             elif status in ("In", "RFD", "Out"):
                 filtered_items = _filter_items(filtered_items, status=status)
 
@@ -947,6 +1230,7 @@ def search(request):
                 serial_no += 1
 
             doc = {**doc, "items": filtered_items}
+            _attach_legacy_year_mfg(doc)
             results.append(_shape_search_result({**doc, "_id": None}))
 
         response = {"count": len(results), "data": results}
@@ -979,14 +1263,100 @@ def search_download(request):
         # Create CSV content
         output = StringIO()
         writer = csv.writer(output)
-        
+
+        # Column selection (optional). If absent, preserve existing export columns.
+        columns_param = (params.get("columns") or "").strip()
+
+        default_column_ids = [
+            "slNo",
+            "passNo",
+            "projectName",
+            "customerName",
+            "customerUnitAddress",
+            "customerLocation",
+            "customerPhone",
+            "equipmentType",
+            "itemName",
+            "partNumber",
+            "serialNumber",
+            "yearOfMfg",
+            "defectDetails",
+            "status",
+            "dateIn",
+            "dateRfd",
+            "dateOut",
+            "rectificationDetails",
+            "remarks1",
+            "remarks2",
+            "createdBy",
+            "updatedBy",
+        ]
+
+        default_column_labels = {
+            "slNo": "Sl No.",
+            "passNo": "Pass No",
+            "projectName": "Project Name",
+            "customerName": "Customer Name",
+            "customerUnitAddress": "Customer Unit Address",
+            "customerLocation": "Customer Location",
+            "customerPhone": "Customer Phone",
+            "yearOfMfg": "Year of MFG",
+            "equipmentType": "Equipment Type",
+            "itemName": "Item Name",
+            "partNumber": "Part Number",
+            "serialNumber": "Serial Number",
+            "defectDetails": "Defect Details",
+            "status": "Status",
+            "dateIn": "Date In",
+            "dateRfd": "Date RFD",
+            "dateOut": "Date Out",
+            "rectificationDetails": "Item Rectification Details",
+            "remarks1": "Feedback 1 details",
+            "remarks2": "Feedback 2 details",
+            "createdBy": "CreatedBy",
+            "updatedBy": "updatedBy",
+        }
+
+        selected_column_labels = {
+            "slNo": "SL NO.",
+            "passNo": "PASS NO",
+            "projectName": "PROJECT NAME",
+            "customerName": "CUSTOMER NAME",
+            "customerUnitAddress": "CUSTOMER UNIT ADDRESS",
+            "customerLocation": "CUSTOMER LOCATION",
+            "customerPhone": "CUSTOMER PHONE",
+            "yearOfMfg": "YEAR OF MFG",
+            "equipmentType": "EQUIPMENT TYPE",
+            "itemName": "ITEM NAME",
+            "partNumber": "PART NUMBER",
+            "serialNumber": "SERIAL NUMBER",
+            "defectDetails": "DEFECT DETAILS",
+            "status": "STATUS",
+            "dateIn": "DATE IN",
+            "dateRfd": "DATE RFD",
+            "dateOut": "DATE OUT",
+            "rectificationDetails": "Rectification Details",
+            "remarks1": "Remarks 1",
+            "remarks2": "Handed Over To / Dispatched Details",
+            "createdBy": "Created By",
+            "updatedBy": "Updated By",
+        }
+
+        if columns_param:
+            requested_ids = [c.strip() for c in columns_param.split(",") if c.strip()]
+            allowed = set(selected_column_labels.keys())
+            column_ids = [cid for cid in requested_ids if cid in allowed]
+            if not column_ids:
+                column_ids = default_column_ids
+                column_labels = default_column_labels
+            else:
+                column_labels = selected_column_labels
+        else:
+            column_ids = default_column_ids
+            column_labels = default_column_labels
+
         # Write header row
-        writer.writerow([
-            "Sl No.","Pass No", "Project Name", 
-            "Customer Name", "Customer Unit Address", "Customer Location", "Customer Phone",
-            "Equipment Type", "Item Name", "Part Number", "Serial Number", "Defect Details", 
-            "Status", "Date In", "Date RFD", "Date Out", "Item Rectification Details", "Feedback 1 details", "Feedback 2 details", "CreatedBy", "updatedBy"
-        ])
+        writer.writerow([column_labels.get(cid, cid) for cid in column_ids])
         
         # Write data rows - one row per item
         for doc in docs:
@@ -1001,10 +1371,23 @@ def search_download(request):
             search_type = params.get("type")
             status = params.get("status")
             search_value = params.get("value")
+            part_no_filter = (params.get("partNo") or params.get("part_no") or "").strip()
+
+            # Normalize legacy fields (RFC/RFD + Remarks 2 compatibility)
+            _normalize_items_on_read(items)
+
+            # Phone number matching fallback (covers numeric stored phone fields)
+            if search_type == "PhoneNumber" and search_value:
+                phone_digits = re.sub(r"\D+", "", str(search_value))
+                doc_phone_digits = re.sub(r"\D+", "", str(doc.get("customer", {}).get("phone", "") or ""))
+                if phone_digits and not re.match(rf"^{re.escape(phone_digits)}", doc_phone_digits):
+                    continue
             if search_type == "serialNumber" and search_value:
                 items = _filter_serial(items, serial_substring=search_value, status=status)
             elif search_type == "ItemPartNo" and search_value:
                 items = _filter_items(items, part_number = search_value, status=status)
+            elif search_type == "ProjectName" and part_no_filter:
+                items = _filter_items(items, part_number=part_no_filter, status=status)
             elif status in ("In", "RFD", "Out"):
                 items = _filter_items(items, status=status)
 
@@ -1012,7 +1395,9 @@ def search_download(request):
             
             # if search_type == "ItemPartNo" and params.get("value"):
             #     items = _filter_items_by_part_number(items, params.get("value"))
-            
+
+            ym_doc = doc.get("yearOfMfg")
+
             for item in items:
                 # Determine status: OUT if both itemIn and itemOut are true, else IN
                 status = "OUT" if item.get("itemIn") and item.get("itemOut") else "IN"
@@ -1042,35 +1427,47 @@ def search_download(request):
                     except:
                         date_out = ""
 
-                writer.writerow([
-                    serial_no,
-                    pass_no,
-                    project_name,
-                    customer.get("name", ""),
-                    customer.get("unitAddress", ""),
-                    customer.get("location", ""),
-                    phone,
-                    item.get("equipmentType", ""),
-                    item.get("itemName", ""),
-                    item.get("partNumber", ""),
-                    item.get("serialNumber", ""),
-                    item.get("defectDetails", ""),
-                    status,
-                    date_in,
-                    date_rfd,
-                    date_out,
-                    item.get("itemRectificationDetails", ""),
-                    item.get("itemFeedback1Details", ""),
-                    item.get("itemFeedback2Details", ""),
-                    createdBy,
-                    updatedBy
-                ])
+                ym_item = item.get("yearOfMfg")
+                if ym_item not in (None, ""):
+                    year_mfg_cell = str(ym_item)
+                elif ym_doc not in (None, ""):
+                    year_mfg_cell = str(ym_doc)
+                else:
+                    year_mfg_cell = ""
+
+                value_map = {
+                    "slNo": serial_no,
+                    "passNo": pass_no,
+                    "projectName": project_name,
+                    "customerName": customer.get("name", ""),
+                    "customerUnitAddress": customer.get("unitAddress", ""),
+                    "customerLocation": customer.get("location", ""),
+                    "customerPhone": phone,
+                    "yearOfMfg": year_mfg_cell,
+                    "equipmentType": item.get("equipmentType", ""),
+                    "itemName": item.get("itemName", ""),
+                    "partNumber": item.get("partNumber", ""),
+                    "serialNumber": item.get("serialNumber", ""),
+                    "defectDetails": item.get("defectDetails", ""),
+                    "status": status,
+                    "dateIn": date_in,
+                    "dateRfd": date_rfd,
+                    "dateOut": date_out,
+                    "rectificationDetails": item.get("itemRectificationDetails", ""),
+                    "remarks1": item.get("itemFeedback1Details", ""),
+                    "remarks2": item.get("itemFeedback2Details", ""),
+                    "createdBy": createdBy,
+                    "updatedBy": updatedBy,
+                }
+
+                writer.writerow([value_map.get(cid, "") for cid in column_ids])
                 serial_no += 1
 
         csv_content = output.getvalue()
         output.close()
         
-        default_filename = f"{datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%Y-%m-%d')}_inventory_export.csv"
+        now = datetime.now(ZoneInfo('Asia/Kolkata'))
+        default_filename = f"report_{now.strftime('%d-%m-%Y')}_{now.strftime('%H-%M-%S')}.csv"
         # Return CSV file
         response = HttpResponse(csv_content, content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="{default_filename}"'
@@ -1106,7 +1503,7 @@ def search_download_sticker(request):
         docs = list(collection.find(query))
         for doc in docs:
             passNo = doc.get("passNo","")
-            dateIn = doc.get("dateIn","")
+            dateIn = _format_date_ddmmyyyy(doc.get("dateIn",""))
             items = doc.get("items", [])
             projectName = doc.get("projectName","")
             unitAddress = doc.get("customer",{}).get("unitAddress","")
@@ -1205,7 +1602,7 @@ def search_download_form(request):
         }
 
         headers = ["SL. NO", "PART NO", "ITEM NAME", "ITEM S1.N",
-                   "DEFECT DETAILS", "RECTIFICATION DETAILS", "REMARKS"]
+                   "DEFECT DETAILS", "RECTIFICATION DETAILS", "RCVD BACK BY CS"]
 
         column_widths = {'A': 5, 'B': 20, 'C': 25, 'D': 15, 'E': 20, 'F': 40, 'G': 10}
 
@@ -1229,10 +1626,12 @@ def search_download_form(request):
 
             # Header Labels
             cust = doc.get("customer", {})
+            date_in_display = _format_date_ddmmyyyy(doc.get("dateIn", ""))
+            print(date_in_display)
             header_values = {
                 'C3:D3': doc.get("passNo", ""),
                 'F3:G3': datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d-%m-%Y"),
-                'C4:D4': doc.get("dateIn", ""),
+                'C4:D4': date_in_display,
                 'F4:G4': cust.get("name", ""),
                 'C5:D5': doc.get("projectName", ""),
                 'F5:G5': cust.get("phone", ""),
@@ -1267,7 +1666,7 @@ def search_download_form(request):
             return ws
 
         def create_footer(ws, start_row=19, end_row=23):
-            footers = ["HANDED OVER BY (CS-Rep)", "RECEIVED BY (TS-Rep)", "RECEIVED BACK BY AFTER REPAIR (CS-Rep)"]
+            footers = ["HANDED OVER BY (CS-Rep)", "RECEIVED BY (TS-Rep)", "REMARKS"]
             ws.merge_cells(f'A{start_row}:B{start_row}')
             ws.merge_cells(f'C{start_row}:D{start_row}')
             ws.merge_cells(f'E{start_row}:G{start_row}')
@@ -1372,6 +1771,38 @@ def search_suggestions(request):
             docs = admin_projects_collection.find({"projectName": {"$regex": f"^{value}", "$options": "i"}}, {"_id": 0, "projectName": 1}).limit(10)
             for doc in docs:
                 suggestions.add(doc.get("projectName"))
+        elif search_type == "PhoneNumber":
+            # Show suggestions once we have 3+ digits (prefix match).
+            phone_digits = re.sub(r"\D+", "", value)
+            if len(phone_digits) < 3:
+                suggestions = set()
+            else:
+                # Try Mongo prefix regex first.
+                docs = collection.find(
+                    {"customer.phone": {"$regex": f"^{phone_digits}"}},
+                    {"_id": 0, "customer.phone": 1}
+                ).limit(50)
+
+                for doc in docs:
+                    phone = doc.get("customer", {}).get("phone", "")
+                    phone_str = str(phone)
+                    phone_str_digits = re.sub(r"\D+", "", phone_str)
+                    if re.match(rf"^{re.escape(phone_digits)}", phone_str_digits):
+                        suggestions.add(phone_str)
+                        if len(suggestions) >= 10:
+                            break
+
+                # Fallback scan (covers numeric-stored phone fields)
+                if len(suggestions) < 1:
+                    fallback_docs = collection.find({}, {"_id": 0, "customer.phone": 1}).limit(300)
+                    for doc in fallback_docs:
+                        phone = doc.get("customer", {}).get("phone", "")
+                        phone_str = str(phone)
+                        phone_str_digits = re.sub(r"\D+", "", phone_str)
+                        if re.match(rf"^{re.escape(phone_digits)}", phone_str_digits):
+                            suggestions.add(phone_str)
+                            if len(suggestions) >= 10:
+                                break
         else:
             response = {"error": "Invalid type"}
             log_api_response("search_suggestions", request.method, dict(params), response)
@@ -1387,58 +1818,287 @@ def search_suggestions(request):
         log_api_response("search_suggestions", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
         return JsonResponse(error_response, status=500)
 
+
+def _normalized_spares_bin_labels(bin_nos):
+    out = []
+    for b in bin_nos or []:
+        s = str(b).strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def _check_spares_bins_unique_in_store(store, bin_nos, exclude_part_no=None):
+    """
+    Reject if any bin label is already used by another part in the same store.
+    """
+    bins = _normalized_spares_bin_labels(bin_nos)
+    if len(bins) != len(set(bins)):
+        return JsonResponse(
+            {"error": "Duplicate bin numbers within this item"},
+            status=400,
+        )
+    if not store or not bins:
+        return None
+    q = {"item_loc": store}
+    if exclude_part_no:
+        q["part_no"] = {"$ne": exclude_part_no}
+    for doc in spares_master.find(q, {"bin_nos": 1}):
+        existing = set(_normalized_spares_bin_labels(doc.get("bin_nos")))
+        for b in bins:
+            if b in existing:
+                msg = (
+                    "This bin is already allotted to a different item. "
+                    f"Use a different bin. Duplicate Bin: {b}"
+                )
+                return JsonResponse({"error": msg}, status=409)
+    return None
+
+
+def _spares_master_payload(body, user, *, is_update: bool):
+    """Validate and build document fields from JSON body."""
+    part_no = (body.get("part_no") or "").strip()
+    item_name = (body.get("item_name") or "").strip()
+    project_name = (body.get("project_name") or "").strip()
+    no_of_bins = body.get("no_of_bins")
+    bin_nos = body.get("bin_nos", [])
+    rack_no = (body.get("rack_no") or "").strip()
+    item_loc = (body.get("item_loc") or "").strip()
+
+    if no_of_bins is None or no_of_bins == "":
+        return None, JsonResponse({"error": "no_of_bins is required"}, status=400)
+    try:
+        no_of_bins_int = int(no_of_bins)
+    except (TypeError, ValueError):
+        return None, JsonResponse({"error": "no_of_bins must be a number"}, status=400)
+
+    if not isinstance(bin_nos, list) or len(bin_nos) != no_of_bins_int:
+        return None, JsonResponse(
+            {"error": "bin_nos count must match no_of_bins"},
+            status=400,
+        )
+    if not part_no or not item_name:
+        return None, JsonResponse({"error": "part_no and item_name are required"}, status=400)
+    if not item_loc:
+        return None, JsonResponse({"error": "store (item_loc) is required"}, status=400)
+
+    doc = {
+        "part_no": part_no,
+        "item_name": item_name,
+        "project_name": project_name,
+        "no_of_bins": no_of_bins_int,
+        "bin_nos": bin_nos,
+        "rack_no": rack_no,
+        "item_loc": item_loc,
+    }
+    if not is_update:
+        doc["created_by"] = user.get("username")
+        doc["created_at"] = datetime.now(ZoneInfo("Asia/Kolkata"))
+    else:
+        doc["updated_by"] = user.get("username")
+        doc["updated_at"] = datetime.now(ZoneInfo("Asia/Kolkata"))
+    return doc, None
+
+
 @csrf_exempt
 def spares_master_add(request):
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
 
-    user, err = require_auth(request)
+    user, err = require_auth(request, role="admin")
     if err:
         return err
 
     try:
         body = json.loads(request.body or "{}")
 
-        part_no = body.get("part_no", "").strip()
-        item_name = body.get("item_name", "").strip()
-        no_of_bins = body.get("no_of_bins")
-        bin_nos = body.get("bin_nos", [])
-        rack_no = body.get("rack_no", "").strip()
-        item_loc = body.get("item_loc", "").strip()
+        doc, bad = _spares_master_payload(body, user, is_update=False)
+        if bad:
+            return bad
 
-        if not isinstance(bin_nos, list) or len(bin_nos) != int(no_of_bins):
-            return JsonResponse(
-                {"error": "bin_nos count must match no_of_bins"},
-                status=400
-            )
-        # Required fields
-        if not part_no or not item_name:
-            return JsonResponse({"error": "part_no and item_name are required"}, status=400)
-
-        # Connect to MongoDB
         spares_coll = db["spares_master"]
+        part_no = doc["part_no"]
 
-        # Check duplicate part no
         if spares_coll.find_one({"part_no": part_no}):
             return JsonResponse({"error": "Part number already exists"}, status=409)
 
-        # Insert into DB
-        spares_coll.insert_one({
-            "part_no": part_no,
-            "item_name": item_name,
-            "no_of_bins": int(no_of_bins),
-            "bin_nos": bin_nos,
-            "rack_no": rack_no,
-            "item_loc": item_loc,
-            "created_by": user.get("username"),
-            "created_at": datetime.now(ZoneInfo("Asia/Kolkata"))
-        })
+        dup_err = _check_spares_bins_unique_in_store(doc["item_loc"], doc["bin_nos"], None)
+        if dup_err:
+            return dup_err
+
+        spares_coll.insert_one(doc)
 
         return JsonResponse({"message": "Item added", "part_no": part_no}, status=201)
 
     except Exception as e:
         stack = traceback.format_exc()
         return JsonResponse({"error": str(e), "stack_trace": stack}, status=500)
+
+
+@csrf_exempt
+def spares_master_update(request):
+    """Update existing master row (admin only)."""
+    if request.method != "PUT":
+        return JsonResponse({"error": "Only PUT allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or "{}")
+        doc, bad = _spares_master_payload(body, user, is_update=True)
+        if bad:
+            return bad
+
+        part_no = doc["part_no"]
+        spares_coll = db["spares_master"]
+        existing = spares_coll.find_one({"part_no": part_no})
+        if not existing:
+            return JsonResponse({"error": "Part number not found"}, status=404)
+
+        dup_err = _check_spares_bins_unique_in_store(doc["item_loc"], doc["bin_nos"], part_no)
+        if dup_err:
+            return dup_err
+
+        # Preserve qty and history if present
+        update_fields = {k: v for k, v in doc.items() if k != "part_no"}
+        spares_coll.update_one({"part_no": part_no}, {"$set": update_fields})
+
+        return JsonResponse({"message": "Item updated", "part_no": part_no}, status=200)
+
+    except Exception as e:
+        stack = traceback.format_exc()
+        return JsonResponse({"error": str(e), "stack_trace": stack}, status=500)
+
+
+@csrf_exempt
+def spares_master_search(request):
+    """Regex / pattern search on part_no for suggestions (authenticated users)."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        pattern = (request.GET.get("pattern") or "").strip()
+        if not pattern:
+            return JsonResponse({"matches": []})
+
+        # Safe substring search: escape regex metacharacters
+        safe = re.escape(pattern)
+        cursor = spares_master.find(
+            {"part_no": {"$regex": safe, "$options": "i"}},
+            {"_id": 0, "part_no": 1, "item_name": 1, "project_name": 1, "item_loc": 1},
+        ).limit(25)
+        matches = list(cursor)
+        return JsonResponse({"matches": matches})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def spares_stores_list(request):
+    """Predefined store names for dropdowns (any authenticated user)."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        docs = list(spares_stores_col.find({}, {"_id": 0, "name": 1}))
+        names = sorted(
+            [d.get("name") for d in docs if d.get("name")],
+            key=lambda s: str(s).casefold(),
+        )
+        return JsonResponse({"stores": names})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_stores_add(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or "{}")
+        name = (body.get("name") or "").strip()
+        if not name:
+            return JsonResponse({"error": "Store name is required"}, status=400)
+        if spares_stores_col.find_one({"name": name}):
+            return JsonResponse({"error": "Store already exists"}, status=409)
+        spares_stores_col.insert_one(
+            {
+                "name": name,
+                "createdBy": user.get("username"),
+                "createdAt": datetime.now(ZoneInfo("Asia/Kolkata")),
+            }
+        )
+        return JsonResponse({"message": "Store added", "name": name}, status=201)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_stores_edit(request):
+    if request.method != "PUT":
+        return JsonResponse({"error": "Only PUT allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or "{}")
+        old_name = (body.get("oldName") or "").strip()
+        new_name = (body.get("newName") or "").strip()
+        if not old_name or not new_name:
+            return JsonResponse({"error": "oldName and newName are required"}, status=400)
+        if old_name == new_name:
+            return JsonResponse({"message": "No change", "name": new_name})
+
+        if not spares_stores_col.find_one({"name": old_name}):
+            return JsonResponse({"error": "Store not found"}, status=404)
+        if spares_stores_col.find_one({"name": new_name}):
+            return JsonResponse({"error": "A store with that name already exists"}, status=409)
+
+        spares_stores_col.update_one({"name": old_name}, {"$set": {"name": new_name, "updatedBy": user.get("username"), "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata"))}})
+        # Keep master list in sync: item_loc holds selected store name
+        spares_master.update_many({"item_loc": old_name}, {"$set": {"item_loc": new_name}})
+
+        return JsonResponse({"message": "Store updated", "name": new_name})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_stores_list(request):
+    """List stores (admin) — same data as spares_stores_list but explicit admin route."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        docs = list(spares_stores_col.find({}, {"_id": 0, "name": 1}))
+        names = sorted(
+            [d.get("name") for d in docs if d.get("name")],
+            key=lambda s: str(s).casefold(),
+        )
+        return JsonResponse({"stores": names})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 @csrf_exempt
 def spares_master_list(request):
@@ -1479,13 +2139,14 @@ def spares_in(request):
 
             # Find item in master list
             item = spares_master.find_one({"part_no": part_no})
-            no_of_bins = spares_master.find_one({"part_no": part_no}).get("no_of_bins",0)
-            bin_nos = spares_master.find_one({"part_no": part_no}).get("bin_nos",[])
-            rack_no = spares_master.find_one({"part_no": part_no}).get("rack_no","")
-            item_loc = spares_master.find_one({"part_no": part_no}).get("item_loc","")
-
             if not item:
                 return JsonResponse({"error": "Item not found"}, status=404)
+
+            no_of_bins = item.get("no_of_bins", 0)
+            bin_nos = item.get("bin_nos", [])
+            rack_no = item.get("rack_no", "")
+            item_loc = item.get("item_loc", "")
+            project_name = item.get("project_name", "")
 
             # Current qty
             current_qty = int(item.get("qty", 0))
@@ -1512,7 +2173,8 @@ def spares_in(request):
                             "no_of_bins": no_of_bins,
                             "bin_nos": bin_nos,
                             "rack_no": rack_no,
-                            "item_loc": item_loc
+                            "item_loc": item_loc,
+                            "project_name": project_name,
                         }
                     }
                 }
@@ -1530,7 +2192,8 @@ def spares_in(request):
                 "no_of_bins": no_of_bins,
                 "bin_nos": bin_nos,
                 "rack_no": rack_no,
-                "item_loc": item_loc
+                "item_loc": item_loc,
+                "project_name": project_name,
             })
 
             spares_audit.insert_one({
@@ -1545,7 +2208,8 @@ def spares_in(request):
                 "no_of_bins": no_of_bins,
                 "bin_nos": bin_nos,
                 "rack_no": rack_no,
-                "item_loc": item_loc
+                "item_loc": item_loc,
+                "project_name": project_name,
             })
 
             return JsonResponse({"status": "success", "new_qty": new_qty})
@@ -1571,13 +2235,14 @@ def spares_out(request):
 
             # Find item
             item = spares_master.find_one({"part_no": part_no})
-            no_of_bins = spares_master.find_one({"part_no": part_no}).get("no_of_bins",0)
-            bin_nos = spares_master.find_one({"part_no": part_no}).get("bin_nos",[])
-            rack_no = spares_master.find_one({"part_no": part_no}).get("rack_no","")
-            item_loc = spares_master.find_one({"part_no": part_no}).get("item_loc","")
-
             if not item:
                 return JsonResponse({"error": "Item not found"}, status=404)
+
+            no_of_bins = item.get("no_of_bins", 0)
+            bin_nos = item.get("bin_nos", [])
+            rack_no = item.get("rack_no", "")
+            item_loc = item.get("item_loc", "")
+            project_name = item.get("project_name", "")
 
             current_qty = int(item.get("qty", 0))
 
@@ -1608,7 +2273,8 @@ def spares_out(request):
                             "no_of_bins": no_of_bins,
                             "bin_nos": bin_nos,
                             "rack_no": rack_no,
-                            "item_loc": item_loc
+                            "item_loc": item_loc,
+                            "project_name": project_name,
                         }
                     }
                 }
@@ -1626,7 +2292,8 @@ def spares_out(request):
                 "no_of_bins": no_of_bins,
                 "bin_nos": bin_nos,
                 "rack_no": rack_no,
-                "item_loc": item_loc
+                "item_loc": item_loc,
+                "project_name": project_name,
             })
 
             spares_audit.insert_one({
@@ -1641,7 +2308,8 @@ def spares_out(request):
                 "no_of_bins": no_of_bins,
                 "bin_nos": bin_nos,
                 "rack_no": rack_no,
-                "item_loc": item_loc
+                "item_loc": item_loc,
+                "project_name": project_name,
             })
 
             return JsonResponse({"status": "success", "new_qty": new_qty})
@@ -1708,8 +2376,6 @@ def spares_audit_filter(request):
 
     return JsonResponse({"error": "Method Not Allowed"}, status=405)
 
-import re
-
 def sort_key(part_no):
     part_no = str(part_no).strip()
     match = re.match(r'^(\d+)', part_no)
@@ -1735,18 +2401,24 @@ def stock_check(request):
             writer = csv.writer(output)
 
             # Header
-            writer.writerow(["Sl No", "Part No","Item Name","Item Loc","Rack No","No of Bins","Bin No","Qty"])
+            writer.writerow(["Sl No", "Part No", "Item Name", "Project Name", "Item Loc", "Rack No", "No of Bins", "Bin No", "Qty"])
 
             # Rows
             for idx, item in enumerate(items):
+                bin_nos_val = item.get("bin_nos")
+                if isinstance(bin_nos_val, list):
+                    bin_cell = ", ".join(str(b) for b in bin_nos_val)
+                else:
+                    bin_cell = item.get("bin_no", "") or ""
                 writer.writerow([
                     idx + 1,
                     item.get("part_no", ""),
                     item.get("item_name", ""),
+                    item.get("project_name", ""),
                     item.get("item_loc", ""),
                     item.get("rack_no", ""),
                     item.get("no_of_bins", 0),
-                    item.get("bin_no", ""),
+                    bin_cell,
                     item.get("qty", 0)
                 ])
 

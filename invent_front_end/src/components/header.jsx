@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import styles from './styles.module.css';
 import userImg from '../assets/person.png';
+import { apiBase } from '../apiConfig';
 
 function Header() {
   const[profileOpen,setProfileOpen] = useState(false);
@@ -13,7 +15,7 @@ function Header() {
       // Call logout endpoint to invalidate session on server
       const token = sessionStorage.getItem('token') || localStorage.getItem('token');
       if (token) {
-        await fetch('http://localhost:8000/api/logout', {
+        await fetch(`${apiBase()}/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -47,6 +49,7 @@ function Header() {
           <div style={{ display: profileOpen ? 'block' : 'none' }}>
             <div className={styles.profileChild}>
               <div>USER: {username}</div>
+              <Link to="/change-password" className={styles.profileLink}>CHANGE PASSWORD</Link>
               <button onClick={onLogout}>LOGOUT</button>
             </div>
           </div>

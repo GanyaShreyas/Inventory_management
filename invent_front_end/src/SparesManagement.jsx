@@ -4,18 +4,51 @@ import Footer from './components/footer';
 import styles from './components/styles.module.css';
 import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import axios from 'axios';
 import { useEffect } from 'react';
 import React from 'react';
+import { apiBase, authHeaders } from './apiConfig';
 
-function apiBase() {
-  return 'http://localhost:8000/api';
+/** Master/API may return bin_nos as array, comma-separated string, or missing — always a string[] for .map / .join */
+function normalizeBinNos(value) {
+  if (value == null || value === '') return [];
+  if (Array.isArray(value)) {
+    return value.map((b) => (b == null ? '' : String(b)));
+  }
+  if (typeof value === 'string') {
+    return value.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  }
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    return [String(value)];
+  }
+  return [];
 }
 
-function authHeaders() {
-  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+/** Debounced regex search on part_no for dropdowns (uses /spares/master/search). */
+function usePartSuggestList(partSearch) {
+  const [matches, setMatches] = useState([]);
+  useEffect(() => {
+    const q = (partSearch || "").trim();
+    if (!q) {
+      setMatches([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `${apiBase()}/spares/master/search?pattern=${encodeURIComponent(q)}`,
+          { headers: authHeaders() }
+        );
+        const data = await res.json();
+        setMatches(data.matches || []);
+      } catch {
+        setMatches([]);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [partSearch]);
+  return matches;
 }
 
 export default function SparesManagement() {
@@ -29,7 +62,7 @@ export default function SparesManagement() {
         <div className={styles.page}>
           <div className={styles.pageHeader}>
             <div className={styles.pageTitle}>SPARES MANAGEMENT</div>
-            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/choice');}}>CLOSE</button>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/choice');}}>BACK</button>
           </div>
           <div className={styles.cardGrid}>
             <div className={styles.card}>
@@ -52,11 +85,6 @@ export default function SparesManagement() {
               <div className={styles.cardDesc}>View and Download item details.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/spares/stock-check">OPEN</Link>
             </div>
-             <div className={styles.card}>
-              <div className={styles.cardTitle}>MANAGE MASTER LIST - SPARES</div>
-              <div className={styles.cardDesc}>Item details with location item placed.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/spares/spares-master-list">OPEN</Link>
-            </div>
           </div>
         </div>
         <Footer />
@@ -65,16 +93,95 @@ export default function SparesManagement() {
   );
 }
 
-function SparesMasterListPage() {
+function SparesMasterListPage({ adminMode = false, closePath } = {}) {
+  const navigate = useNavigate();
+  const resolvedClose = closePath || (adminMode ? "/admin/admin-dashboard" : "/user/spares");
+
   const [partNo, setPartNo] = useState("");
   const [itemName, setItemName] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [stores, setStores] = useState([]);
+  const [itemLoc, setItemLoc] = useState("");
   const [noOfBins, setNoOfBins] = useState("");
   const [binNos, setBinNos] = useState([]);
   const [rackNo, setRackNo] = useState("");
-  const [itemLoc, setItemLoc] = useState("");
   const [status, setStatus] = useState("");
+  const [partSuggestions, setPartSuggestions] = useState([]);
+  const [showPartDropdown, setShowPartDropdown] = useState(false);
+  const [editingExisting, setEditingExisting] = useState(false);
 
-  const navigate = useNavigate();
+  const storeOptions = useMemo(() => {
+    const s = new Set(stores);
+    if (itemLoc && !s.has(itemLoc)) {
+      return [...stores, itemLoc].sort((a, b) => String(a).localeCompare(String(b)));
+    }
+    return stores;
+  }, [stores, itemLoc]);
+
+  useEffect(() => {
+    const loadStores = async () => {
+      try {
+        const res = await fetch(`${apiBase()}/spares/stores`, { headers: authHeaders() });
+        const data = await res.json();
+        setStores(data.stores || []);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadStores();
+  }, []);
+
+  useEffect(() => {
+    const q = (partNo || "").trim();
+    if (!q) {
+      setPartSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `${apiBase()}/spares/master/search?pattern=${encodeURIComponent(q)}`,
+          { headers: authHeaders() }
+        );
+        const data = await res.json();
+        setPartSuggestions(data.matches || []);
+      } catch {
+        setPartSuggestions([]);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [partNo]);
+
+  const applyMasterDetail = (detail) => {
+    setItemName(detail.item_name || "");
+    setProjectName(detail.project_name || "");
+    setItemLoc(detail.item_loc || "");
+    setRackNo(detail.rack_no != null ? String(detail.rack_no) : "");
+    setNoOfBins(detail.no_of_bins ?? "");
+    setBinNos(normalizeBinNos(detail.bin_nos));
+    setEditingExisting(true);
+  };
+
+  const handlePickPart = async (pn) => {
+    const trimmed = (pn || "").trim();
+    if (!trimmed) return;
+    setPartNo(trimmed);
+    setShowPartDropdown(false);
+    try {
+      const res = await fetch(
+        `${apiBase()}/spares/master?part_no=${encodeURIComponent(trimmed)}`,
+        { headers: authHeaders() }
+      );
+      if (res.ok) {
+        const detail = await res.json();
+        applyMasterDetail(detail);
+      } else {
+        setEditingExisting(false);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleNoOfBinsChange = (e) => {
     const count = Number(e.target.value);
@@ -91,41 +198,57 @@ function SparesMasterListPage() {
   const clearForm = () => {
     setPartNo("");
     setItemName("");
+    setProjectName("");
+    setItemLoc("");
     setNoOfBins("");
     setBinNos([]);
     setRackNo("");
-    setItemLoc("");
     setStatus("");
+    setEditingExisting(false);
   };
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setStatus("");
 
+    if (!itemLoc) {
+      setStatus("Please select a store.");
+      return;
+    }
+
     const confirmSubmit = window.confirm(
-      `Add new item?\n\nPart No: ${partNo}\nName: ${itemName}`
+      editingExisting
+        ? `Update master item?\n\nPart No: ${partNo}\nName: ${itemName}`
+        : `Add new item?\n\nPart No: ${partNo}\nName: ${itemName}`
     );
     if (!confirmSubmit) return;
 
     try {
-      const res = await fetch(`${apiBase()}/spares/master/add`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          part_no: partNo,
-          item_name: itemName,
-          no_of_bins: noOfBins,
-          bin_nos: binNos,
-          rack_no: rackNo,
-          item_loc: itemLoc,
-        }),
-      });
+      const payload = {
+        part_no: partNo.trim(),
+        item_name: itemName,
+        project_name: projectName,
+        no_of_bins: noOfBins,
+        bin_nos: binNos,
+        rack_no: rackNo,
+        item_loc: itemLoc,
+      };
 
+      const url = editingExisting
+        ? `${apiBase()}/spares/master/update`
+        : `${apiBase()}/spares/master/add`;
+      const method = editingExisting ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(payload),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed");
 
-      alert("Item added to master list!");
-      setStatus("Item added");
+      alert(editingExisting ? "Item updated in master list!" : "Item added to master list!");
+      setStatus(editingExisting ? "Item updated" : "Item added");
       clearForm();
     } catch (err) {
       alert(err.message);
@@ -135,90 +258,152 @@ function SparesMasterListPage() {
 
   return (
     <div className={styles.page}>
-          <div className={styles.pageHeader}>
-            <div className={styles.pageTitle}>SPARES — MASTER LIST</div>
-            <button
-              className={`${styles.btn} ${styles.btnGhost}`}
-              onClick={() => navigate("/user/spares")}
-            >
-              CLOSE
+      <div className={styles.pageHeader}>
+        <div className={styles.pageTitle}>
+          SPARES — MASTER LIST{adminMode ? " (ADMIN)" : ""}
+        </div>
+        <button
+          className={`${styles.btn} ${styles.btnGhost}`}
+          onClick={() => navigate(resolvedClose)}
+        >
+          BACK
+        </button>
+      </div>
+
+      <div className={styles.card}>
+        <form onSubmit={onSubmit} className={styles.form}>
+          <div className={styles.formGrid2}>
+            <div className={styles.autocompleteWrapper}>
+              <label className={styles.label}>
+                ITEM PART NO
+                <input
+                  className={styles.control}
+                  value={partNo}
+                  placeholder="Type or search part number…"
+                  onChange={(e) => {
+                    setPartNo(e.target.value);
+                    setEditingExisting(false);
+                    setShowPartDropdown(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowPartDropdown(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    const q = (partNo || "").trim();
+                    if (!q) return;
+                    const exact = partSuggestions.find(
+                      (m) => String(m.part_no).toLowerCase() === q.toLowerCase()
+                    );
+                    if (exact) {
+                      handlePickPart(exact.part_no);
+                      return;
+                    }
+                    if (partSuggestions.length === 1) {
+                      handlePickPart(partSuggestions[0].part_no);
+                    }
+                  }}
+                  required
+                />
+                {showPartDropdown && partSuggestions.length > 0 && (
+                  <div className={styles.dropdown}>
+                    {partSuggestions.map((m) => (
+                      <div
+                        key={m.part_no}
+                        className={styles.dropdownItem}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handlePickPart(m.part_no)}
+                      >
+                        {m.part_no}
+                        {m.item_name ? ` — ${m.item_name}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </label>
+            </div>
+
+            <label className={styles.label}>
+              ITEM NAME
+              <input
+                className={styles.control}
+                value={itemName}
+                onChange={(e) => setItemName(e.target.value)}
+                required
+              />
+            </label>
+
+            <label className={styles.label}>
+              PROJECT NAME
+              <input
+                className={styles.control}
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Optional"
+              />
+            </label>
+
+            <label className={styles.label}>
+              STORE NAME
+              <select
+                className={styles.control}
+                value={itemLoc}
+                onChange={(e) => setItemLoc(e.target.value)}
+                required
+              >
+                <option value="">— Select store —</option>
+                {storeOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className={styles.label}>
+              RACK NO
+              <input
+                className={styles.control}
+                type="text"
+                value={rackNo}
+                onChange={(e) => setRackNo(e.target.value)}
+                required
+              />
+            </label>
+
+            <label className={styles.label}>
+              NO OF BINS
+              <input
+                className={styles.control}
+                type="number"
+                min="1"
+                value={noOfBins}
+                onChange={handleNoOfBinsChange}
+                required
+              />
+            </label>
+
+            {binNos.map((bin, index) => (
+              <label className={styles.label} key={index}>
+                BIN NO {index + 1}
+                <input
+                  className={styles.control}
+                  value={bin}
+                  onChange={(e) => handleBinNoChange(index, e.target.value)}
+                  required
+                />
+              </label>
+            ))}
+          </div>
+
+          {status && <div>{status}</div>}
+
+          <div className={styles.pageActions}>
+            <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`}>
+              {editingExisting ? "UPDATE ITEM" : "ADD ITEM"}
             </button>
           </div>
-
-          <div className={styles.card}>
-            <form onSubmit={onSubmit} className={styles.form}>
-              <div className={styles.formGrid2}>
-                <label className={styles.label}>
-                  ITEM PART NO
-                  <input
-                    className={styles.control}
-                    value={partNo}
-                    onChange={(e) => setPartNo(e.target.value)}
-                    required
-                  />
-                </label>
-
-                <label className={styles.label}>
-                  ITEM NAME
-                  <input
-                    className={styles.control}
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    required
-                  />
-                </label>
-
-                <label className={styles.label}>
-                  NO OF BINS
-                  <input
-                    className={styles.control}
-                    type="number"
-                    value={noOfBins}
-                    onChange={handleNoOfBinsChange}
-                    required 
-                  />
-                </label>
-                {binNos.map((bin, index) => (
-                  <label className={styles.label} key={index}>
-                    BIN NO {index + 1}
-                    <input
-                      className={styles.control}
-                      value={bin}
-                      onChange={(e) => handleBinNoChange(index, e.target.value)}
-                      required
-                    />
-                  </label>
-                ))}
-                <label className={styles.label}>
-                  RACK NO
-                  <input
-                    className={styles.control}
-                    type="number"
-                    value={rackNo}
-                    onChange={(e) => setRackNo(e.target.value)}
-                    required 
-                  />
-                </label>
-                <label className={styles.label}>
-                  ITEM LOC
-                  <input
-                    className={styles.control}
-                    value={itemLoc}
-                    onChange={(e) => setItemLoc(e.target.value)}
-                    required
-                  />
-                </label>
-              </div>
-
-              {status && <div>{status}</div>}
-
-              <div className={styles.pageActions}>
-                <button className={`${styles.btn} ${styles.btnPrimary}`}>
-                  ADD ITEM
-                </button>
-              </div>
-            </form>
-          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -227,12 +412,13 @@ function SparesInPage() {
   const [items, setItems] = useState([]);
   const [selectedPart, setSelectedPart] = useState("");
   const [itemName, setItemName] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [currentQty, setCurrentQty] = useState(0);
   const [qtyIn, setQtyIn] = useState("");
   const [status, setStatus] = useState("");
   const [remarks, setRemarks] = useState("");
   const [partSearch, setPartSearch] = useState("");
-  const [filteredItems, setFilteredItems] = useState([]);
+  const partMatches = usePartSuggestList(partSearch);
   const [showDropdown, setShowDropdown] = useState(false);
   const [noOfBins, setNoOfBins] = useState("");
   const [binNos, setBinNos] = useState([]);
@@ -258,29 +444,16 @@ function SparesInPage() {
       console.error(err);
     }
   };
-  
-  useEffect(() => {
-  if (!partSearch) {
-    setFilteredItems([]);
-    return;
-  }
-
-  const filtered = items.filter((i) =>
-    i.part_no.toLowerCase().startsWith(partSearch.toLowerCase())
-  ).sort((a, b) => a.part_no.localeCompare(b.part_no));
-
-  setFilteredItems(filtered);
-  }, [partSearch, items]);
 
   const clearForm = () => {
-    setItemName('');
-    setCurrentQty('');
-    setQtyIn('');
-    setSelectedPart('');
-    setStatus('');
-    setRemarks('');
-    setPartSearch('');
-    setFilteredItems([]);
+    setItemName("");
+    setProjectName("");
+    setCurrentQty("");
+    setQtyIn("");
+    setSelectedPart("");
+    setStatus("");
+    setRemarks("");
+    setPartSearch("");
     setShowDropdown(false);
     setNoOfBins("");
     setBinNos([]);
@@ -289,15 +462,27 @@ function SparesInPage() {
     setRecievedFrom("");
   };
 
-  const handleSelectPart = (partNo) => {
+  const handleSelectPart = async (partNo) => {
     setSelectedPart(partNo);
-    const item = items.find((i) => i.part_no === partNo);
+    let item = items.find((i) => i.part_no === partNo);
+    if (!item) {
+      try {
+        const res = await fetch(
+          `${apiBase()}/spares/master?part_no=${encodeURIComponent(partNo)}`,
+          { headers: authHeaders() }
+        );
+        if (res.ok) item = await res.json();
+      } catch (e) {
+        console.error(e);
+      }
+    }
 
     if (item) {
       setItemName(item.item_name);
+      setProjectName(item.project_name || "");
       setCurrentQty(item.qty || 0);
       setNoOfBins(item.no_of_bins || 0);
-      setBinNos(item.bin_nos || []);
+      setBinNos(normalizeBinNos(item.bin_nos));
       setRackNo(item.rack_no || "");
       setItemLoc(item.item_loc || "");
     }
@@ -351,7 +536,7 @@ function SparesInPage() {
               className={`${styles.btn} ${styles.btnGhost}`}
               onClick={() => navigate("/user/spares")}
             >
-              CLOSE
+              BACK
             </button>
           </div>
 
@@ -370,11 +555,33 @@ function SparesInPage() {
                       setShowDropdown(true);
                       }}
                       onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const q = (partSearch || '').trim();
+                        if (!q) return;
+                        const exact =
+                          partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                          items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
+                        if (exact) {
+                          const p = exact.part_no;
+                          setPartSearch(p);
+                          setShowDropdown(false);
+                          handleSelectPart(p);
+                          return;
+                        }
+                        if (partMatches.length === 1) {
+                          const p = partMatches[0].part_no;
+                          setPartSearch(p);
+                          setShowDropdown(false);
+                          handleSelectPart(p);
+                        }
+                      }}
                     />
 
-                    {showDropdown && filteredItems.length > 0 && (
+                    {showDropdown && partMatches.length > 0 && (
                     <div className={styles.dropdown}>
-                      {filteredItems.map((i) => (
+                      {partMatches.map((i) => (
                       <div
                         key={i.part_no}
                         className={styles.dropdownItem}
@@ -399,6 +606,11 @@ function SparesInPage() {
                     value={itemName}
                     readOnly
                   />
+                </label>
+
+                <label className={styles.label}>
+                  PROJECT NAME
+                  <input className={styles.control} value={projectName} readOnly />
                 </label>
 
                 <label className={styles.label}>
@@ -431,7 +643,7 @@ function SparesInPage() {
                   <input className={styles.control} value={rackNo} readOnly />
                 </label>
                 <label className={styles.label}>
-                  ITEM LOC
+                  STORE NAME
                   <input
                     className={styles.control}
                     value={itemLoc}
@@ -490,13 +702,14 @@ function SparesOutPage() {
   const [items, setItems] = useState([]);
   const [selectedPart, setSelectedPart] = useState("");
   const [itemName, setItemName] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [qtyAvailable, setQtyAvailable] = useState(0);
   const [qtyOut, setQtyOut] = useState("");
   const [handingTo, setHandingTo] = useState("");
   const [remarks, setRemarks] = useState("");
   const [status, setStatus] = useState("");
   const [partSearch, setPartSearch] = useState("");
-  const [filteredItems, setFilteredItems] = useState([]);
+  const partMatches = usePartSuggestList(partSearch);
   const [showDropdown, setShowDropdown] = useState(false);
   const [noOfBins, setNoOfBins] = useState("");
   const [binNos, setBinNos] = useState([]);
@@ -523,30 +736,16 @@ function SparesOutPage() {
     }
   };
 
-  useEffect(() => {
-  if (!partSearch) {
-    setFilteredItems([]);
-    return;
-  }
-
-  const filtered = items.filter((i) =>
-    i.part_no.toLowerCase().startsWith(partSearch.toLowerCase())
-  ).sort((a, b) => a.part_no.localeCompare(b.part_no));
-
-  setFilteredItems(filtered);
-  }, [partSearch, items]);
-
   const clearForm = () => {
-    
-    setItemName('');
-    setHandingTo('');
-    setRemarks('');
-    setQtyAvailable('');
-    setQtyOut('');
-    setSelectedPart('');
-    setStatus('');
-    setPartSearch('');
-    setFilteredItems([]);
+    setItemName("");
+    setProjectName("");
+    setHandingTo("");
+    setRemarks("");
+    setQtyAvailable("");
+    setQtyOut("");
+    setSelectedPart("");
+    setStatus("");
+    setPartSearch("");
     setShowDropdown(false);
     setNoOfBins("");
     setBinNos([]);
@@ -557,13 +756,25 @@ function SparesOutPage() {
   // Auto-fill name + qty
   const handleSelectPart = async (partNo) => {
     setSelectedPart(partNo);
-    const item = items.find((i) => i.part_no === partNo);
+    let item = items.find((i) => i.part_no === partNo);
+    if (!item) {
+      try {
+        const res = await fetch(
+          `${apiBase()}/spares/master?part_no=${encodeURIComponent(partNo)}`,
+          { headers: authHeaders() }
+        );
+        if (res.ok) item = await res.json();
+      } catch (e) {
+        console.error(e);
+      }
+    }
 
     if (item) {
       setItemName(item.item_name);
+      setProjectName(item.project_name || "");
       setQtyAvailable(item.qty || 0);
       setNoOfBins(item.no_of_bins || 0);
-      setBinNos(item.bin_nos || "");
+      setBinNos(normalizeBinNos(item.bin_nos));
       setRackNo(item.rack_no || "");
       setItemLoc(item.item_loc || "");
     }
@@ -620,7 +831,7 @@ function SparesOutPage() {
               className={`${styles.btn} ${styles.btnGhost}`}
               onClick={() => navigate("/user/spares")}
             >
-              CLOSE
+              BACK
             </button>
           </div>
 
@@ -641,11 +852,33 @@ function SparesOutPage() {
                       setShowDropdown(true);
                       }}
                       onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const q = (partSearch || '').trim();
+                        if (!q) return;
+                        const exact =
+                          partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                          items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
+                        if (exact) {
+                          const p = exact.part_no;
+                          setPartSearch(p);
+                          setShowDropdown(false);
+                          handleSelectPart(p);
+                          return;
+                        }
+                        if (partMatches.length === 1) {
+                          const p = partMatches[0].part_no;
+                          setPartSearch(p);
+                          setShowDropdown(false);
+                          handleSelectPart(p);
+                        }
+                      }}
                     />
 
-                    {showDropdown && filteredItems.length > 0 && (
+                    {showDropdown && partMatches.length > 0 && (
                     <div className={styles.dropdown}>
-                      {filteredItems.map((i) => (
+                      {partMatches.map((i) => (
                       <div
                         key={i.part_no}
                         className={styles.dropdownItem}
@@ -667,6 +900,11 @@ function SparesOutPage() {
                 <label className={styles.label}>
                   ITEM NAME
                   <input className={styles.control} value={itemName} readOnly />
+                </label>
+
+                <label className={styles.label}>
+                  PROJECT NAME
+                  <input className={styles.control} value={projectName} readOnly />
                 </label>
 
                 {/* Qty Available */}
@@ -704,7 +942,7 @@ function SparesOutPage() {
                   <input className={styles.control} value={rackNo} readOnly />
                 </label>
                 <label className={styles.label}>
-                  ITEM LOC
+                  STORE NAME
                   <input className={styles.control} value={itemLoc} readOnly />
                 </label>
               </div>
@@ -763,6 +1001,7 @@ function ViewItemPage() {
   const [items, setItems] = useState([]);
   const [selectedPart, setSelectedPart] = useState("");
   const [itemName, setItemName] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [itemLoc, setItemLoc] = useState("");
   const [rackNo, setRackNo] = useState("");
   const [noOfBins, setNoOfBins] = useState(0);
@@ -772,7 +1011,7 @@ function ViewItemPage() {
   const [startDate, setStart] = useState("");
   const [endDate, setEnd] = useState("");
   const [partSearch, setPartSearch] = useState("");
-  const [filteredItems, setFilteredItems] = useState([]);
+  const partMatches = usePartSuggestList(partSearch);
   const [showDropdown, setShowDropdown] = useState(false);
 
   const navigate = useNavigate();
@@ -808,19 +1047,6 @@ function ViewItemPage() {
     }
   };
 
-  useEffect(() => {
-  if (!partSearch) {
-    setFilteredItems([]);
-    return;
-  }
-
-  const filtered = items.filter((i) =>
-    i.part_no.toLowerCase().startsWith(partSearch.toLowerCase())
-  ).sort((a, b) => a.part_no.localeCompare(b.part_no));
-
-  setFilteredItems(filtered);
-  }, [partSearch, items]);
-
   const filterAudit = async () => {
     const res = await fetch(
       `${apiBase()}/spares/audit/filter?part_no=${selectedPart}&start_date=${startDate}&end_date=${endDate}`,
@@ -850,10 +1076,11 @@ function ViewItemPage() {
       const detail = await detailRes.json();
 
       setItemName(detail.item_name || "");
+      setProjectName(detail.project_name || "");
       setItemLoc(detail.item_loc || "");
       setRackNo(detail.rack_no || "");
       setNoOfBins(detail.no_of_bins || 0);
-      setBinNos(detail.bin_nos || []);
+      setBinNos(normalizeBinNos(detail.bin_nos));
       setQtyAvailable(detail.qty || 0);
 
       // Audit list
@@ -877,7 +1104,7 @@ function ViewItemPage() {
               className={`${styles.btn} ${styles.btnGhost}`}
               onClick={() => navigate("/user/spares")}
             >
-              CLOSE
+              BACK
             </button>
           </div>
 
@@ -897,11 +1124,33 @@ function ViewItemPage() {
                       setShowDropdown(true);
                       }}
                       onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const q = (partSearch || '').trim();
+                        if (!q) return;
+                        const exact =
+                          partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                          items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
+                        if (exact) {
+                          const p = exact.part_no;
+                          setPartSearch(p);
+                          setShowDropdown(false);
+                          handleSelectPart(p);
+                          return;
+                        }
+                        if (partMatches.length === 1) {
+                          const p = partMatches[0].part_no;
+                          setPartSearch(p);
+                          setShowDropdown(false);
+                          handleSelectPart(p);
+                        }
+                      }}
                     />
 
-                    {showDropdown && filteredItems.length > 0 && (
+                    {showDropdown && partMatches.length > 0 && (
                     <div className={styles.dropdown}>
-                      {filteredItems.map((i) => (
+                      {partMatches.map((i) => (
                       <div
                         key={i.part_no}
                         className={styles.dropdownItem}
@@ -928,7 +1177,11 @@ function ViewItemPage() {
                   />
                 </label>
                 <label className={styles.label}>
-                  ITEM LOC
+                  PROJECT NAME
+                  <input className={styles.control} value={projectName} readOnly />
+                </label>
+                <label className={styles.label}>
+                  STORE NAME
                   <input
                     className={styles.control}
                     value={itemLoc}
@@ -1004,6 +1257,7 @@ function ViewItemPage() {
                       <th>Sl No</th>
                       <th>User</th>
                       <th>Date</th>
+                      <th>Project</th>
                       <th>In</th>
                       <th>Out</th>
                       <th>Qty As On Date</th>
@@ -1015,7 +1269,7 @@ function ViewItemPage() {
                   <tbody>
                     {auditList.length === 0 ? (
                       <tr>
-                        <td colSpan="5" style={{ textAlign: "center", padding: "15px" }}>
+                        <td colSpan="9" style={{ textAlign: "center", padding: "15px" }}>
                           No records found
                         </td>
                       </tr>
@@ -1025,6 +1279,7 @@ function ViewItemPage() {
                           <td>{idx + 1}</td>
                           <td>{row.user?.username}</td>
                           <td>{formatDateTime(row.date)}</td>
+                          <td>{row.project_name || "-"}</td>
                           <td>{row.in || "-"}</td>
                           <td>{row.out || "-"}</td>
                           <td>{row.qty_after}</td>
@@ -1097,7 +1352,7 @@ function StockCheckPage() {
             <button className={`${styles.btn} ${styles.btnGhost}`}
               onClick={() => navigate("/user/spares")}
             >
-              CLOSE
+              BACK
             </button>
           </div>
 
@@ -1123,7 +1378,8 @@ function StockCheckPage() {
                     <th>Sl No</th>
                     <th>Part No</th>
                     <th>Item Name</th>
-                    <th>Item Loc</th>
+                    <th>Project Name</th>
+                    <th>Store Name</th>
                     <th>Rack No</th>
                     <th>No of Bins</th>
                     <th>Bin No</th>
@@ -1134,7 +1390,7 @@ function StockCheckPage() {
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: "center" }}>No items</td>
+                      <td colSpan="9" style={{ textAlign: "center" }}>No items</td>
                     </tr>
                   ) : (
                     sortedItems.map((item, index) => (
@@ -1142,6 +1398,7 @@ function StockCheckPage() {
                         <td>{index + 1}</td>
                         <td>{item.part_no}</td>
                         <td>{item.item_name}</td>
+                        <td>{item.project_name || "-"}</td>
                         <td>{item.item_loc || "-"}</td>
                         <td>{item.rack_no || "-"}</td>
                         <td>{item.no_of_bins ?? 0}</td>

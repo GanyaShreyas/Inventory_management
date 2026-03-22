@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styles from './styles.module.css';
+import { apiBase, authHeaders } from '../apiConfig';
 
 function UserItemSection() {
   // State for dropdowns
@@ -17,7 +18,7 @@ function UserItemSection() {
 
   // Fetch all projects on mount
   useEffect(() => {
-    fetch('http://localhost:8000/api/admin/projects/list', {
+    fetch(`${apiBase()}/admin/projects/list`, {
       headers: { ...authHeaders() }
     })
       .then(res => res.json())
@@ -27,7 +28,7 @@ function UserItemSection() {
   // Fetch item types when project changes
   useEffect(() => {
     if (!selectedProject) return;
-    fetch(`http://localhost:8000/api/admin/projects/items?projectName=${encodeURIComponent(selectedProject)}`, {
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(selectedProject)}`, {
       headers: { ...authHeaders() }
     })
       .then(res => res.json())
@@ -45,7 +46,7 @@ function UserItemSection() {
   // Fetch item names when type changes
   useEffect(() => {
     if (!selectedProject || !selectedType) return;
-    fetch(`http://localhost:8000/api/admin/projects/items?projectName=${encodeURIComponent(selectedProject)}`, {
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(selectedProject)}`, {
       headers: { ...authHeaders() }
     })
       .then(res => res.json())
@@ -61,7 +62,7 @@ function UserItemSection() {
   // Fetch part numbers when name changes
   useEffect(() => {
     if (!selectedProject || !selectedType || !selectedName) return;
-    fetch(`http://localhost:8000/api/admin/projects/items?projectName=${encodeURIComponent(selectedProject)}`, {
+    fetch(`${apiBase()}/admin/projects/items?projectName=${encodeURIComponent(selectedProject)}`, {
       headers: { ...authHeaders() }
     })
       .then(res => res.json())

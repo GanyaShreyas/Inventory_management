@@ -1,14 +1,6 @@
 import {reactive, useState, useEffect} from 'react';
 import styles from './styles.module.css';
-
-function apiBase() {
-  return 'http://localhost:8000/api';
-}
-
-function authHeaders() {
-  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+import { apiBase, authHeaders } from '../apiConfig';
 
 function formElemnts() {
     const MultiSelectAutocomplete = (value, onChange) => {

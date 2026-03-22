@@ -184,6 +184,16 @@
   font-weight: 500;
   font-size: 14px;
 }
+
+.profileChild .profileLink {
+  color: #0f6eb1;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 8px 0;
+}
+.profileChild .profileLink:hover {
+  text-decoration: underline;
+}
 .profileComp {
   flex-shrink: 0;
   height: 60px;
@@ -514,6 +524,60 @@
   min-height: 0;
 }
 
+/* Used by Item Out / RFD pages to keep consistent viewport sizing */
+.pageScroll {
+  height: calc(100vh - 10px);
+  overflow: auto;
+}
+
+.mt12 {
+  margin-top: 12px;
+}
+
+.pageActionsMt12 {
+  margin-top: 12px;
+}
+
+.statusCard {
+  margin-top: 12px;
+  padding: 12px;
+}
+
+/* Keep exported-item tables consistent sizing across pages */
+.tableWrapScroll {
+  margin-top: 12px;
+  max-height: 350px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.tableMin900 {
+  min-width: 900px;
+}
+
+.rowDisabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.hintNoDate {
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 2px;
+}
+
+.hintRequiredDate {
+  font-size: 0.75rem;
+  color: #ff6b6b;
+  margin-top: 2px;
+}
+
+.hintRequiredRectification {
+  font-size: 0.75rem;
+  color: #ff6b6b;
+  margin-top: 2px;
+}
+
 .pageHeader {
   display: flex;
   align-items: center;
@@ -528,6 +592,177 @@
 }
 
 .pageActions { display: flex; gap: 8px; }
+
+.columnSelectWrap {
+  margin-top: 14px;
+  background: #f8fafc;
+  border: 1px solid #e1e5e9;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.columnSelectTitle {
+  font-weight: 800;
+  color: #0f2233;
+  margin-bottom: 10px;
+}
+
+.columnSelectGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.columnSelectItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #0f2233;
+  font-size: 0.9rem;
+  user-select: none;
+}
+
+.columnSelectItem input {
+  width: 16px;
+  height: 16px;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.reportTh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.columnFilterBtn {
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #b3d6ef;
+  background: #fff;
+  color: #0f6eb1;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.columnFilterBtn:hover {
+  background: #eaf6fd;
+}
+
+.columnFilterIconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid #b3d6ef;
+  background: #fff;
+  color: #0f6eb1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.columnFilterIconBtn:hover {
+  background: #eaf6fd;
+}
+
+/* Report column filter — portaled to body; flex: title + scroll + footer */
+.columnFilterPopoverPortal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 14px 34px rgba(15, 110, 177, 0.16);
+}
+
+.columnFilterPopoverScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  margin-right: -4px;
+  padding-right: 4px;
+}
+
+.columnFilterPopoverFooter {
+  flex-shrink: 0;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.columnFilterPopover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  z-index: 50;
+  width: 280px;
+  max-height: 320px;
+  overflow: auto;
+  box-shadow: 0 14px 34px rgba(15, 110, 177, 0.16);
+}
+
+.columnFilterPopoverTitle {
+  font-weight: 900;
+  color: #0f2233;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.columnFilterValueList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.columnFilterValueItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: #0f2233;
+  font-size: 0.9rem;
+  user-select: none;
+}
+
+.columnFilterValueItem input {
+  width: 16px;
+  height: 16px;
+}
+
+.columnFilterEmpty {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.columnFilterActions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 
 .cardGrid {
   display: grid;
@@ -607,7 +842,7 @@
 .control:focus { border-color: #0f6eb1; box-shadow: 0 0 0 3px rgba(15,110,177,.2); }
 .control[disabled] { background: #f1f5f9; color: #888; cursor: not-allowed; }
 
-.tableWrap { background: #fff; border-radius: 12px; box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12); overflow: visible; }
+.tableWrap { background: #fff; border-radius: 12px; box-shadow: 0 6px 24px rgba(15, 110, 177, 0.12); }
 .table { width: 100%; border-collapse: collapse; font-size: .95rem; }
 .table thead th {
   background: #f6f8fa;

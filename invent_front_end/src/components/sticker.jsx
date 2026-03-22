@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './styles.module.css';
 import { useNavigate } from 'react-router-dom';
-
-function apiBase() {
-    return 'http://localhost:8000/api';
-}
-
-function authHeaders() {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-}
+import { apiBase, authHeaders } from '../apiConfig';
 
 function Sticker() {
     const [type, setType] = useState('sticker');
@@ -25,6 +17,14 @@ function Sticker() {
 
     const navigate = useNavigate();
     const suggestionRef = useRef(null);
+
+    const formatDateDDMMYYYY = (dateStr) => {
+        if (!dateStr || typeof dateStr !== 'string') return dateStr || '';
+        const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!m) return dateStr;
+        const [, yyyy, mm, dd] = m;
+        return `${dd}-${mm}-${yyyy}`;
+    };
     
     useEffect(() => {
         if (record?.items) {
@@ -110,12 +110,26 @@ function Sticker() {
         setOffset('1');
         setRecord(null);
     }
+    const fetchPassItemCount = async (passNo) => {
+        const res = await fetch(`${apiBase()}/items/${encodeURIComponent(passNo)}`, { headers: { ...authHeaders() } });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Failed to fetch pass details');
+        return Array.isArray(data?.items) ? data.items.length : 0;
+    };
     const download_sticker = async () => {
         try {
             const params = new URLSearchParams();
             params.set('type', 'passNo');
             if (!(offset > 0 && offset < 9)) {
                 alert('Enter offset between 1 and 8');
+                return;
+            }
+            const itemCount = Array.isArray(record?.items) && String(record?.passNo || '') === String(value || '')
+                ? record.items.length
+                : await fetchPassItemCount(value);
+            const offsetNum = Number(offset);
+            if (itemCount >= 9 && offsetNum !== 1) {
+                alert('The number of items to be printed is greater than equal to 9, so use a new sheet and set offset value as 1.');
                 return;
             }
             params.set('offset', offset);
@@ -205,7 +219,7 @@ function Sticker() {
             <div className={styles.pageHeader}>
                 <div className={styles.pageTitle}>PRINT STICKERS/HANDING OVER FORM</div>
                 <div className={styles.pageActions}>
-                    <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => { navigate('/user/dashboard'); clearForm() }}>CLOSE</button>
+                    <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => { navigate('/user/dashboard'); clearForm() }}>BACK</button>
                 </div>
             </div>
             <div className={styles.card}>
@@ -227,6 +241,12 @@ function Sticker() {
                                 value={value}
                                 onFocus={() => setShowSuggestions(true)}
                                 onChange={(e) => setValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        viewItems();
+                                    }
+                                }}
                             />
                             {showSuggestions && suggestions.length > 0 && (
                                 <ul className={styles.suggestionsList}>
@@ -249,6 +269,12 @@ function Sticker() {
                                 value={offset}
                                 onFocus={() => setShowSuggestions(true)}
                                 onChange={(e) => setOffset(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        download_sticker();
+                                    }
+                                }}
                             />
                         </label>
                     ) : null}
@@ -274,7 +300,7 @@ function Sticker() {
                 <div className={styles.cardItemOut} style={{ marginTop: 12 }}>
                     <div className={styles.formGrid3}>
                         <div><b>PRIVATE PASS NO:</b> {record.passNo}</div>
-                        <div><b>DATE IN:</b> {record.dateIn}</div>
+                        <div><b>DATE IN:</b> {formatDateDDMMYYYY(record.dateIn)}</div>
                         <div><b>CUSTOMER:</b> {record.customer?.name}</div>
                         <div><b>PROJECT:</b> {record.projectName || ''}</div>
                         <div><b>PHONE:</b> {record.customer?.phone}</div>

@@ -7,6 +7,8 @@ urlpatterns = [
     path('validate-token', views.validate_token),  # GET /api/validate-token
     path('logout', views.logout),  # POST /api/logout
     path('admin/users', views.admin_add_user),  # POST /api/admin/users
+    path('admin/users/reset-password', views.admin_reset_password),  # POST
+    path('user/change-password', views.user_change_password),  # POST
 
     # item in/out and CRUD by passNo
     path('items/in', views.items_in),  # POST /api/items/in
@@ -29,8 +31,17 @@ urlpatterns = [
     path('admin/projects/list', views.admin_get_projects),  # GET /api/admin/projects/list
     path('admin/projects/items', views.admin_get_project_items),  # GET /api/admin/projects/items?projectName=...
 
+    # Admin Backup (MongoDB)
+    path('admin/backup', views.admin_backup_mongo),  # GET /api/admin/backup
+
     # spares management
-    path("spares/master/add", views.spares_master_add), # POST /spares/master 
+    path("spares/master/add", views.spares_master_add),  # POST — admin only
+    path("spares/master/update", views.spares_master_update),  # PUT — admin only
+    path("spares/master/search", views.spares_master_search),  # GET ?pattern=
+    path("spares/stores", views.spares_stores_list),  # GET — dropdown list
+    path("admin/stores/add", views.admin_stores_add),
+    path("admin/stores/edit", views.admin_stores_edit),
+    path("admin/stores/list", views.admin_stores_list),
     path("spares/in", views.spares_in), # POST /spares/in 
     path("spares/master", views.spares_master_list),  # GET /spares/master
     path("spares/out", views.spares_out), # POST /spares/out
