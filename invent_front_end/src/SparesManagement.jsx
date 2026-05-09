@@ -76,6 +76,16 @@ export default function SparesManagement() {
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/spares/spares-out">OPEN</Link>
             </div>
             <div className={styles.card}>
+              <div className={styles.cardTitle}>SPARES OUT - RETURNABLE</div>
+              <div className={styles.cardDesc}>Issue returnable items with service request tracking.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/spares/spares-out-returnable">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>SPARES IN - RETURNED</div>
+              <div className={styles.cardDesc}>Receive returned quantities against service requests.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/spares/spares-in-returned">OPEN</Link>
+            </div>
+            <div className={styles.card}>
               <div className={styles.cardTitle}>VIEW ITEM LOG</div>
               <div className={styles.cardDesc}>Complete history of an item.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/spares/view-item">OPEN</Link>
@@ -997,6 +1007,474 @@ function SparesOutPage() {
 }
 
 
+function SparesOutReturnablePage() {
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [items, setItems] = useState([]);
+  const [selectedPart, setSelectedPart] = useState("");
+  const [itemName, setItemName] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [qtyAvailable, setQtyAvailable] = useState(0);
+  const [qtyOut, setQtyOut] = useState("");
+  const [date, setDate] = useState(today);
+  const [handedOverByCs, setHandedOverByCs] = useState("");
+  const [receivedByTs, setReceivedByTs] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [serviceRequestNo, setServiceRequestNo] = useState("");
+  const [createdServiceRequestNo, setCreatedServiceRequestNo] = useState("");
+  const [status, setStatus] = useState("");
+  const [partSearch, setPartSearch] = useState("");
+  const partMatches = usePartSuggestList(partSearch);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [noOfBins, setNoOfBins] = useState("");
+  const [binNos, setBinNos] = useState([]);
+  const [rackNo, setRackNo] = useState("");
+  const [itemLoc, setItemLoc] = useState("");
+
+  const navigate = useNavigate();
+
+  const loadMasterList = async () => {
+    try {
+      const res = await fetch(`${apiBase()}/spares/master`, { headers: authHeaders() });
+      const data = await res.json();
+      setItems(data.items || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadNextServiceRequestNo = async () => {
+    try {
+      const res = await fetch(`${apiBase()}/spares/returnable/next-service-request`, { headers: authHeaders() });
+      const data = await res.json();
+      if (res.ok) setServiceRequestNo(String(data.nextServiceRequestNo || ""));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    loadMasterList();
+    loadNextServiceRequestNo();
+  }, []);
+
+  const clearForm = () => {
+    setSelectedPart("");
+    setPartSearch("");
+    setShowDropdown(false);
+    setItemName("");
+    setProjectName("");
+    setQtyAvailable(0);
+    setNoOfBins("");
+    setBinNos([]);
+    setRackNo("");
+    setItemLoc("");
+    setQtyOut("");
+    setDate(today);
+    setHandedOverByCs("");
+    setReceivedByTs("");
+    setRemarks("");
+    setStatus("");
+  };
+
+  const handleSelectPart = async (partNo) => {
+    setSelectedPart(partNo);
+    let item = items.find((i) => i.part_no === partNo);
+    if (!item) {
+      try {
+        const res = await fetch(
+          `${apiBase()}/spares/master?part_no=${encodeURIComponent(partNo)}`,
+          { headers: authHeaders() }
+        );
+        if (res.ok) item = await res.json();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (item) {
+      setItemName(item.item_name || "");
+      setProjectName(item.project_name || "");
+      setQtyAvailable(item.qty || 0);
+      setNoOfBins(item.no_of_bins || 0);
+      setBinNos(normalizeBinNos(item.bin_nos));
+      setRackNo(item.rack_no || "");
+      setItemLoc(item.item_loc || "");
+    }
+  };
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setStatus("");
+
+    const confirmSubmit = window.confirm(
+      `Issue returnable quantity?\n\nPart No: ${selectedPart}\nQty Handed Over: ${qtyOut}`
+    );
+    if (!confirmSubmit) return;
+
+    try {
+      const res = await fetch(`${apiBase()}/spares/out-returnable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          part_no: selectedPart,
+          qty_out: Number(qtyOut),
+          date,
+          handed_over_by_cs: handedOverByCs,
+          received_by_ts: receivedByTs,
+          remarks,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed");
+
+      setCreatedServiceRequestNo(String(data.serviceRequestNo || ""));
+      setQtyAvailable(Number(data.new_qty || 0));
+      alert(`Returnable issue created. Service Request No: ${data.serviceRequestNo}`);
+
+      setQtyOut('');
+      setHandedOverByCs('');
+      setReceivedByTs('');
+      setRemarks('');
+      setStatus(`Service Request ${data.serviceRequestNo} created`);
+      await loadMasterList();
+      await loadNextServiceRequestNo();
+    } catch (err) {
+      alert(err.message);
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+
+  const downloadForm = async () => {
+    const srToDownload = createdServiceRequestNo || serviceRequestNo;
+    if (!srToDownload) {
+      alert("No Service Request available to download");
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${apiBase()}/spares/out-returnable/download-form?serviceRequestNo=${encodeURIComponent(srToDownload)}`,
+        { headers: authHeaders() }
+      );
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData?.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Service_Request_${srToDownload}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.message);
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <div className={styles.pageTitle}>SPARES — OUT RETURNABLE</div>
+        <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate("/user/spares")}>BACK</button>
+      </div>
+
+      <div className={styles.card}>
+        <form onSubmit={onSubmit} className={styles.form}>
+          <div className={styles.formGrid2}>
+            <label className={styles.label}>SERVICE REQUEST
+              <input className={styles.control} value={serviceRequestNo} readOnly />
+            </label>
+
+            <label className={styles.label}>DATE
+              <input className={styles.control} type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            </label>
+
+            <div className={styles.autocompleteWrapper}>
+              <label className={styles.label}>ITEM PART NO
+                <input
+                  className={styles.control}
+                  value={partSearch}
+                  placeholder="Type part number..."
+                  onChange={(e) => {
+                    setPartSearch(e.target.value);
+                    setShowDropdown(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    const q = (partSearch || '').trim();
+                    if (!q) return;
+                    const exact =
+                      partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                      items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
+                    if (exact) {
+                      const p = exact.part_no;
+                      setPartSearch(p);
+                      setShowDropdown(false);
+                      handleSelectPart(p);
+                    }
+                  }}
+                  required
+                />
+                {showDropdown && partMatches.length > 0 && (
+                  <div className={styles.dropdown}>
+                    {partMatches.map((i) => (
+                      <div
+                        key={i.part_no}
+                        className={styles.dropdownItem}
+                        onClick={() => {
+                          setPartSearch(i.part_no);
+                          setShowDropdown(false);
+                          handleSelectPart(i.part_no);
+                        }}
+                      >
+                        {i.part_no}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </label>
+            </div>
+
+            <label className={styles.label}>ITEM NAME
+              <input className={styles.control} value={itemName} readOnly />
+            </label>
+
+            <label className={styles.label}>PROJECT NAME
+              <input className={styles.control} value={projectName} readOnly />
+            </label>
+
+            <label className={styles.label}>AVAILABLE QTY
+              <input className={styles.control} value={qtyAvailable} readOnly />
+            </label>
+          </div>
+
+          <div className={styles.formGrid2}>
+            <label className={styles.label}>NO OF BINS
+              <input className={styles.control} value={noOfBins} readOnly />
+            </label>
+
+            {binNos.map((bin, index) => (
+              <label className={styles.label} key={index}>BIN NO {index + 1}
+                <input className={styles.control} value={bin} readOnly />
+              </label>
+            ))}
+
+            <label className={styles.label}>RACK NO
+              <input className={styles.control} value={rackNo} readOnly />
+            </label>
+
+            <label className={styles.label}>STORE NAME
+              <input className={styles.control} value={itemLoc} readOnly />
+            </label>
+          </div>
+
+          <div className={styles.formGrid2}>
+            <label className={styles.label}>QTY HANDED OVER
+              <input className={styles.control} type="number" min="1" value={qtyOut} onChange={(e) => setQtyOut(e.target.value)} required />
+            </label>
+
+            <label className={styles.label}>HANDED OVER BY (CS)
+              <input className={styles.control} value={handedOverByCs} onChange={(e) => setHandedOverByCs(e.target.value)} required />
+            </label>
+
+            <label className={styles.label}>RECEIVED BY (TS)
+              <input className={styles.control} value={receivedByTs} onChange={(e) => setReceivedByTs(e.target.value)} required />
+            </label>
+
+            <label className={styles.label}>REMARKS
+              <input className={styles.control} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            </label>
+          </div>
+
+          {status && <div>{status}</div>}
+
+          <div className={styles.pageActions}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">ISSUE RETURNABLE</button>
+            <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={downloadForm}>
+              DOWNLOAD FORM
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+function SparesInReturnedPage() {
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [requests, setRequests] = useState([]);
+  const [serviceRequestNo, setServiceRequestNo] = useState('');
+  const [detail, setDetail] = useState(null);
+  const [qtyAvailable, setQtyAvailable] = useState(0);
+  const [dateIn, setDateIn] = useState(today);
+  const [qtyIn, setQtyIn] = useState('');
+  const [receivedFrom, setReceivedFrom] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [status, setStatus] = useState('');
+
+  const navigate = useNavigate();
+
+  const loadRequests = async () => {
+    try {
+      const res = await fetch(`${apiBase()}/spares/out-returnable/list`, { headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      setRequests(data.requests || []);
+    } catch (err) {
+      setRequests([]);
+      console.error(err);
+    }
+  };
+
+  const loadDetail = async (srNo) => {
+    if (!srNo) {
+      setDetail(null);
+      setQtyAvailable(0);
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase()}/spares/out-returnable/${encodeURIComponent(srNo)}`, { headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      setDetail(data);
+
+      if (data.part_no) {
+        const partRes = await fetch(`${apiBase()}/spares/master?part_no=${encodeURIComponent(data.part_no)}`, { headers: authHeaders() });
+        if (partRes.ok) {
+          const partData = await partRes.json();
+          setQtyAvailable(partData.qty || 0);
+        }
+      }
+    } catch (err) {
+      setDetail(null);
+      setQtyAvailable(0);
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+
+  useEffect(() => {
+    loadRequests();
+  }, []);
+
+  const onServiceRequestChange = async (value) => {
+    setServiceRequestNo(value);
+    setStatus('');
+    await loadDetail(value);
+  };
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setStatus('');
+    if (!serviceRequestNo) {
+      alert('Select Service Request No');
+      return;
+    }
+
+    const confirmSubmit = window.confirm(
+      `Receive returned qty?\n\nService Request: ${serviceRequestNo}\nQty In: ${qtyIn}`
+    );
+    if (!confirmSubmit) return;
+
+    try {
+      const res = await fetch(`${apiBase()}/spares/in-returned`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          serviceRequestNo: Number(serviceRequestNo),
+          date_in: dateIn,
+          qty_in: Number(qtyIn),
+          received_from: receivedFrom,
+          remarks,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+
+      setStatus('Returned quantity received successfully');
+      setQtyAvailable(Number(data.new_qty || 0));
+      setQtyIn('');
+      setReceivedFrom('');
+      setRemarks('');
+
+      await loadRequests();
+      await loadDetail(serviceRequestNo);
+    } catch (err) {
+      alert(err.message);
+      setStatus(`Error: ${err.message}`);
+    }
+  };
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <div className={styles.pageTitle}>SPARES — IN RETURNED</div>
+        <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/user/spares')}>BACK</button>
+      </div>
+
+      <div className={styles.card}>
+        <form onSubmit={onSubmit} className={styles.form}>
+          <div className={styles.formGrid2}>
+            <label className={styles.label}>SERVICE REQUEST NO
+              <select className={styles.control} value={serviceRequestNo} onChange={(e) => onServiceRequestChange(e.target.value)} required>
+                <option value="">SELECT SERVICE REQUEST</option>
+                {requests.map((r) => (
+                  <option key={r.serviceRequestNo} value={r.serviceRequestNo}>
+                    {r.serviceRequestNo} - {r.part_no} (BAL: {r.outstanding_qty})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className={styles.label}>DATE IN
+              <input className={styles.control} type="date" value={dateIn} onChange={(e) => setDateIn(e.target.value)} required />
+            </label>
+
+            <label className={styles.label}>QTY IN
+              <input className={styles.control} type="number" min="1" value={qtyIn} onChange={(e) => setQtyIn(e.target.value)} required />
+            </label>
+
+            <label className={styles.label}>RECEIVED FROM
+              <input className={styles.control} value={receivedFrom} onChange={(e) => setReceivedFrom(e.target.value)} required />
+            </label>
+
+            <label className={styles.label}>AVAILABLE QTY
+              <input className={styles.control} value={qtyAvailable} readOnly />
+            </label>
+
+            <label className={styles.label}>REMARKS
+              <input className={styles.control} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            </label>
+          </div>
+
+          {detail ? (
+            <div className={styles.card} style={{ marginTop: 12 }}>
+              <div><b>Part No:</b> {detail.part_no || '-'}</div>
+              <div><b>Item Name:</b> {detail.item_name || '-'}</div>
+              <div><b>Project Name:</b> {detail.project_name || '-'}</div>
+              <div><b>Qty Handed Over:</b> {detail.qty_handed_over || 0}</div>
+              <div><b>Qty Returned:</b> {detail.qty_returned || 0}</div>
+              <div><b>Outstanding Qty:</b> {detail.outstanding_qty || 0}</div>
+            </div>
+          ) : null}
+
+          {status && <div>{status}</div>}
+
+          <div className={styles.pageActions}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit">ADD RETURN</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
 function ViewItemPage() {
   const [items, setItems] = useState([]);
   const [selectedPart, setSelectedPart] = useState("");
@@ -1415,5 +1893,5 @@ function StockCheckPage() {
   );
 }
 
-export { SparesMasterListPage, SparesInPage, SparesOutPage, ViewItemPage, StockCheckPage };
+export { SparesMasterListPage, SparesInPage, SparesOutPage, SparesOutReturnablePage, SparesInReturnedPage, ViewItemPage, StockCheckPage };
 

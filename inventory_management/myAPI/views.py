@@ -1,7 +1,7 @@
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from bson import ObjectId
 import traceback
 from datetime import datetime, timedelta
@@ -29,8 +29,12 @@ sessions_collection = db["sessions"]
 spares_master = db["spares_master"]   # master list
 spares_in_col = db["spares_in"]       # logs table
 spares_out_col = db["spares_out"]  # logs table
+spares_out_returnable_col = db["spares_out_returnable"]
+spares_in_returned_col = db["spares_in_returned"]
+spares_returnable_requests_col = db["spares_returnable_requests"]
 spares_audit = db["spares_audit"]
 spares_stores_col = db["spares_stores"]  # { "name": str, ... }
+obd_collection = db["obd_records"]
 
 # Admin Projects collection
 admin_projects_collection = db["admin_projects"]
@@ -621,6 +625,7 @@ def items_in(request):
                 "itemIn": True,  # Always true when item is entered
                 "itemOut": False,
                 "dateOut": None,  # Will be set when item goes out
+                "dispatchThrough": "",
                 "itemRectificationDetails": "",  # New field for rectification details
                 "itemFeedback1Details": "",  # New field for feedback 1 details
                 "itemFeedback2Details": "",  # New field for feedback 2 details
@@ -809,6 +814,8 @@ def update_item_out(request, pass_no):
 
         # Check if we have the same number of items
         original_items = doc.get("items", [])
+        # Normalize legacy fields (itemRfc -> itemRfd) so guards work correctly
+        _normalize_items_on_read(original_items)
         if len(updates) != len(original_items):
             response = {"error": f"Number of items mismatch. Expected {len(original_items)}, got {len(updates)}"}
             return JsonResponse(response, status=400)
@@ -837,8 +844,22 @@ def update_item_out(request, pass_no):
                 elif not original_item.get("dateOut"):
                     updated_item["dateOut"] = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
                     print(f"DEBUG: Auto-setting dateOut for item {i} to {updated_item['dateOut']}")
+
+                # Legacy handling: rows that were already Item Out before this update
+                # may not have dispatchThrough populated; allow null/blank for them.
+                if original_item.get("itemOut") is True:
+                    updated_item["dispatchThrough"] = update_item.get("dispatchThrough")
+                else:
+                    dispatch_through = (update_item.get("dispatchThrough") or "").strip()
+                    if dispatch_through not in ("Direct Collection", "Through Shipping"):
+                        return JsonResponse(
+                            {"error": "Dispatch Through is required for all newly Item Out rows"},
+                            status=400,
+                        )
+                    updated_item["dispatchThrough"] = dispatch_through
             else:
                 updated_item["dateOut"] = None
+                updated_item["dispatchThrough"] = ""
                 print(f"DEBUG: Clearing dateOut for item {i} since itemOut is False")
             
             # Handle rectification details
@@ -896,6 +917,23 @@ def edit_record(request, pass_no):
                 log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
                 return JsonResponse(response, status=400)
 
+            existing_doc = collection.find_one({"passNo": pass_no}, {"items": 1})
+            if not existing_doc:
+                response = {"error": "Not found"}
+                log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
+                return JsonResponse(response, status=404)
+
+            existing_items = existing_doc.get("items", [])
+            already_out_keys = set()
+            for it in existing_items:
+                if it.get("itemOut"):
+                    already_out_keys.add((
+                        str(it.get("equipmentType") or ""),
+                        str(it.get("itemName") or ""),
+                        str(it.get("partNumber") or ""),
+                        str(it.get("serialNumber") or ""),
+                    ))
+
             allowed_fields = ["dateIn", "customer", "projectName", "items"]
             set_fields = {k: v for k, v in body.items() if k in allowed_fields}
 
@@ -905,6 +943,28 @@ def edit_record(request, pass_no):
                     item["itemIn"] = True  # Always true when item is entered
                     if "dateOut" not in item:
                         item["dateOut"] = None
+                    if "dispatchThrough" not in item:
+                        item["dispatchThrough"] = ""
+                    dispatch_through = (item.get("dispatchThrough") or "").strip()
+                    item_key = (
+                        str(item.get("equipmentType") or ""),
+                        str(item.get("itemName") or ""),
+                        str(item.get("partNumber") or ""),
+                        str(item.get("serialNumber") or ""),
+                    )
+                    was_already_out = item_key in already_out_keys
+                    if item.get("itemOut"):
+                        if (not was_already_out) and dispatch_through not in ("Direct Collection", "Through Shipping"):
+                            return JsonResponse(
+                                {"error": "Dispatch Through is required for all newly Item Out rows"},
+                                status=400,
+                            )
+                        if was_already_out:
+                            item["dispatchThrough"] = item.get("dispatchThrough")
+                        else:
+                            item["dispatchThrough"] = dispatch_through
+                    else:
+                        item["dispatchThrough"] = ""
                     if "dateRfd" not in item:
                         item["dateRfd"] = None
                     if "itemRectificationDetails" not in item:
@@ -983,6 +1043,9 @@ def _normalize_item_fields_on_read(item: dict):
 
     if rfd_date in (None, "", False) and rfc_date not in (None, "", False):
         item["dateRfd"] = rfc_date
+
+    if "dispatchThrough" not in item or item.get("dispatchThrough") is None:
+        item["dispatchThrough"] = ""
 
     # Remarks 2 compatibility (read-time normalization only)
     if ("itemFeedback2Details" not in item) or (item.get("itemFeedback2Details") in (None, "")):
@@ -1082,6 +1145,7 @@ def _build_date_filter(from_str: str | None, to_str: str | None):
 def _build_search_query(params):
     search_type = params.get("type")
     value = params.get("value")
+    dispatch_through = (params.get("dispatchThrough") or "All").strip()
     part_no_filter = (params.get("partNo") or params.get("part_no") or "").strip()
     from_date = params.get("from")
     to_date = params.get("to")
@@ -1109,9 +1173,44 @@ def _build_search_query(params):
         pass  # only date filter
     date_cond = _build_date_filter(from_date, to_date)
     if date_cond:
-        query["dateIn"] = date_cond
+        # Use $elemMatch for array fields so a SINGLE item must satisfy the
+        # full range, and exclude null values that would falsely match $lte.
+        item_date_cond = {**date_cond, "$ne": None}
+        query["$or"] = [
+            {"dateIn": date_cond},
+            {"items": {"$elemMatch": {"dateOut": item_date_cond}}},
+            {"items": {"$elemMatch": {"dateRfd": item_date_cond}}},
+            {"items": {"$elemMatch": {"dateRfc": item_date_cond}}},
+        ]
+    if dispatch_through and dispatch_through != "All":
+        query["items.dispatchThrough"] = dispatch_through
     print(query)
     return query
+
+def _filter_items_by_date_range(items, from_date, to_date):
+    """Filter items to only those where dateOut, dateRfd, or dateRfc falls in range."""
+    if not from_date and not to_date:
+        return items
+    filtered = []
+    for item in items:
+        for key in ("dateOut", "dateRfd", "dateRfc"):
+            val = item.get(key)
+            if not val:
+                continue
+            if from_date and val < from_date:
+                continue
+            if to_date and val > to_date:
+                continue
+            filtered.append(item)
+            break
+    return filtered
+
+
+def _filter_items_by_dispatch_through(items, dispatch_through):
+    if not dispatch_through or dispatch_through == "All":
+        return items
+    return [it for it in items if (it.get("dispatchThrough") or "") == dispatch_through]
+
 
 def _filter_serial(items, serial_substring=None, status=None):
     """Filter items by serial number substring (case-insensitive) and status."""
@@ -1201,7 +1300,10 @@ def search(request):
         search_type = params.get("type")
         search_value = params.get("value")
         status = params.get("status")  # "In" or "Out"
+        dispatch_through = (params.get("dispatchThrough") or "All").strip()
         part_no_filter = (params.get("partNo") or params.get("part_no") or "").strip()
+        from_date = params.get("from")
+        to_date = params.get("to")
 
         for doc in docs:
             filtered_items = doc.get("items", [])
@@ -1224,6 +1326,20 @@ def search(request):
                 filtered_items = _filter_items(filtered_items, part_number=part_no_filter, status=status)
             elif status in ("In", "RFD", "Out"):
                 filtered_items = _filter_items(filtered_items, status=status)
+
+            filtered_items = _filter_items_by_dispatch_through(filtered_items, dispatch_through)
+
+            # For date range: if the record didn't match on dateIn, filter items
+            # to only those with dateOut/dateRfd/dateRfc in the range.
+            if (from_date or to_date):
+                date_in = doc.get("dateIn")
+                date_in_matches = True
+                if from_date and (not date_in or date_in < from_date):
+                    date_in_matches = False
+                if to_date and (not date_in or date_in > to_date):
+                    date_in_matches = False
+                if not date_in_matches:
+                    filtered_items = _filter_items_by_date_range(filtered_items, from_date, to_date)
 
             for item in filtered_items:
                 item["serialNo"] = serial_no
@@ -1285,9 +1401,10 @@ def search_download(request):
             "dateIn",
             "dateRfd",
             "dateOut",
+            "dispatchThrough",
             "rectificationDetails",
-            "remarks1",
             "remarks2",
+            "remarks1",
             "createdBy",
             "updatedBy",
         ]
@@ -1310,9 +1427,10 @@ def search_download(request):
             "dateIn": "Date In",
             "dateRfd": "Date RFD",
             "dateOut": "Date Out",
+            "dispatchThrough": "Dispatch Through",
             "rectificationDetails": "Item Rectification Details",
-            "remarks1": "Feedback 1 details",
             "remarks2": "Feedback 2 details",
+            "remarks1": "Feedback 1 details",
             "createdBy": "CreatedBy",
             "updatedBy": "updatedBy",
         }
@@ -1335,9 +1453,10 @@ def search_download(request):
             "dateIn": "DATE IN",
             "dateRfd": "DATE RFD",
             "dateOut": "DATE OUT",
+            "dispatchThrough": "DISPATCH THROUGH",
             "rectificationDetails": "Rectification Details",
-            "remarks1": "Remarks 1",
             "remarks2": "Handed Over To / Dispatched Details",
+            "remarks1": "Remarks 1",
             "createdBy": "Created By",
             "updatedBy": "Updated By",
         }
@@ -1370,6 +1489,7 @@ def search_download(request):
             
             search_type = params.get("type")
             status = params.get("status")
+            dispatch_through = (params.get("dispatchThrough") or "All").strip()
             search_value = params.get("value")
             part_no_filter = (params.get("partNo") or params.get("part_no") or "").strip()
 
@@ -1390,6 +1510,22 @@ def search_download(request):
                 items = _filter_items(items, part_number=part_no_filter, status=status)
             elif status in ("In", "RFD", "Out"):
                 items = _filter_items(items, status=status)
+
+            items = _filter_items_by_dispatch_through(items, dispatch_through)
+
+            # For date range: if the record didn't match on dateIn, filter items
+            # to only those with dateOut/dateRfd/dateRfc in the range.
+            from_date = params.get("from")
+            to_date = params.get("to")
+            if (from_date or to_date):
+                doc_date_in = doc.get("dateIn")
+                date_in_matches = True
+                if from_date and (not doc_date_in or doc_date_in < from_date):
+                    date_in_matches = False
+                if to_date and (not doc_date_in or doc_date_in > to_date):
+                    date_in_matches = False
+                if not date_in_matches:
+                    items = _filter_items_by_date_range(items, from_date, to_date)
 
             # Filter items by part number if searching by part number
             
@@ -1453,9 +1589,10 @@ def search_download(request):
                     "dateIn": date_in,
                     "dateRfd": date_rfd,
                     "dateOut": date_out,
+                    "dispatchThrough": item.get("dispatchThrough", ""),
                     "rectificationDetails": item.get("itemRectificationDetails", ""),
-                    "remarks1": item.get("itemFeedback1Details", ""),
                     "remarks2": item.get("itemFeedback2Details", ""),
+                    "remarks1": item.get("itemFeedback1Details", ""),
                     "createdBy": createdBy,
                     "updatedBy": updatedBy,
                 }
@@ -2430,3 +2567,793 @@ def stock_check(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Method Not Allowed"}, status=405)
+
+
+# ----------------------
+# Spares Returnable Flow
+# ----------------------
+
+def _preview_next_service_request_no():
+    counters = db["counters"]
+    doc = counters.find_one({"_id": "spares_returnable_service_request"}, {"seq": 1})
+    current = int((doc or {}).get("seq", 0) or 0)
+    return current + 1
+
+
+def _generate_next_service_request_no():
+    counters = db["counters"]
+    doc = counters.find_one_and_update(
+        {"_id": "spares_returnable_service_request"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return int(doc.get("seq", 1))
+
+
+def spares_returnable_next_service_request(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        return JsonResponse({"nextServiceRequestNo": _preview_next_service_request_no()})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def spares_out_returnable(request):
+    user = get_user_from_token(request)
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+        part_no = (data.get("part_no") or "").strip()
+        qty_out = int(data.get("qty_out", 0))
+        date_out = (data.get("date") or datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()).strip()
+        handed_over_by_cs = (data.get("handed_over_by_cs") or "").strip()
+        received_by_ts = (data.get("received_by_ts") or "").strip()
+        remarks = (data.get("remarks") or "").strip()
+
+        if not part_no or qty_out <= 0 or not handed_over_by_cs or not received_by_ts:
+            return JsonResponse({"error": "Invalid input"}, status=400)
+
+        item = spares_master.find_one({"part_no": part_no})
+        if not item:
+            return JsonResponse({"error": "Item not found"}, status=404)
+
+        current_qty = int(item.get("qty", 0))
+        if qty_out > current_qty:
+            return JsonResponse({"error": "Not enough stock"}, status=400)
+
+        new_qty = current_qty - qty_out
+        service_request_no = _generate_next_service_request_no()
+        entry_date = datetime.now(ZoneInfo("Asia/Kolkata"))
+
+        spares_master.update_one(
+            {"part_no": part_no},
+            {
+                "$set": {"qty": new_qty},
+                "$push": {
+                    "history": {
+                        "type": "OUT_RETURNABLE",
+                        "service_request_no": service_request_no,
+                        "qty": qty_out,
+                        "date": entry_date,
+                        "remarks": remarks,
+                        "handed_over_by_cs": handed_over_by_cs,
+                        "received_by_ts": received_by_ts,
+                        "project_name": item.get("project_name", ""),
+                        "item_name": item.get("item_name", ""),
+                        "item_loc": item.get("item_loc", ""),
+                        "rack_no": item.get("rack_no", ""),
+                    }
+                },
+            },
+        )
+
+        request_doc = {
+            "serviceRequestNo": service_request_no,
+            "date": date_out,
+            "part_no": part_no,
+            "item_name": item.get("item_name", ""),
+            "project_name": item.get("project_name", ""),
+            "qty_handed_over": qty_out,
+            "handed_over_by_cs": handed_over_by_cs,
+            "received_by_ts": received_by_ts,
+            "remarks": remarks,
+            "returns": [],
+            "createdBy": (user or {}).get("username"),
+            "createdAt": entry_date,
+            "updatedAt": entry_date,
+            "status": "OPEN",
+        }
+        spares_returnable_requests_col.insert_one(request_doc)
+
+        spares_out_returnable_col.insert_one(
+            {
+                "serviceRequestNo": service_request_no,
+                "part_no": part_no,
+                "qty_out": qty_out,
+                "previous_qty": current_qty,
+                "new_qty": new_qty,
+                "date": entry_date,
+                "remarks": remarks,
+                "handed_over_by_cs": handed_over_by_cs,
+                "received_by_ts": received_by_ts,
+                "project_name": item.get("project_name", ""),
+                "item_name": item.get("item_name", ""),
+                "item_loc": item.get("item_loc", ""),
+                "rack_no": item.get("rack_no", ""),
+            }
+        )
+
+        spares_audit.insert_one(
+            {
+                "part_no": part_no,
+                "date": entry_date,
+                "service_request_no": service_request_no,
+                "in": 0,
+                "out": qty_out,
+                "qty_after": new_qty,
+                "user": user,
+                "remarks": remarks,
+                "project_name": item.get("project_name", ""),
+                "returnable": True,
+                "handed_over_by_cs": handed_over_by_cs,
+                "received_by_ts": received_by_ts,
+            }
+        )
+
+        return JsonResponse(
+            {
+                "status": "success",
+                "serviceRequestNo": service_request_no,
+                "new_qty": new_qty,
+            }
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def _build_returnable_summary(doc):
+    returns = doc.get("returns", []) or []
+    total_returned = sum(int(r.get("qtyReturned", 0) or 0) for r in returns)
+    qty_handed = int(doc.get("qty_handed_over", 0) or 0)
+    outstanding = max(qty_handed - total_returned, 0)
+    return {
+        "serviceRequestNo": doc.get("serviceRequestNo"),
+        "date": doc.get("date", ""),
+        "part_no": doc.get("part_no", ""),
+        "item_name": doc.get("item_name", ""),
+        "project_name": doc.get("project_name", ""),
+        "qty_handed_over": qty_handed,
+        "qty_returned": total_returned,
+        "outstanding_qty": outstanding,
+        "status": "CLOSED" if outstanding == 0 else "OPEN",
+    }
+
+
+def spares_out_returnable_list(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        docs = list(
+            spares_returnable_requests_col.find({}, {"_id": 0}).sort([("serviceRequestNo", -1)]).limit(500)
+        )
+        summaries = [_build_returnable_summary(d) for d in docs]
+        return JsonResponse({"requests": summaries})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def spares_out_returnable_record(request, service_request_no):
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        doc = spares_returnable_requests_col.find_one({"serviceRequestNo": int(service_request_no)}, {"_id": 0})
+        if not doc:
+            return JsonResponse({"error": "Service Request not found"}, status=404)
+
+        summary = _build_returnable_summary(doc)
+        response = {**doc, **summary}
+        return JsonResponse(response)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def spares_in_returned(request):
+    user = get_user_from_token(request)
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+        service_request_no_raw = data.get("serviceRequestNo")
+        qty_in = int(data.get("qty_in", 0))
+        date_in = (data.get("date_in") or datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()).strip()
+        received_from = (data.get("received_from") or "").strip()
+        received_back_by_cs = (data.get("received_back_by_cs") or (user or {}).get("username") or "").strip()
+        remarks = (data.get("remarks") or "").strip()
+
+        if service_request_no_raw in (None, ""):
+            return JsonResponse({"error": "Service Request No is required"}, status=400)
+        service_request_no = int(service_request_no_raw)
+        if qty_in <= 0 or not received_from:
+            return JsonResponse({"error": "Invalid input"}, status=400)
+
+        req_doc = spares_returnable_requests_col.find_one({"serviceRequestNo": service_request_no})
+        if not req_doc:
+            return JsonResponse({"error": "Service Request not found"}, status=404)
+
+        returns = req_doc.get("returns", []) or []
+        qty_handed = int(req_doc.get("qty_handed_over", 0) or 0)
+        total_returned = sum(int(r.get("qtyReturned", 0) or 0) for r in returns)
+        outstanding = max(qty_handed - total_returned, 0)
+        if qty_in > outstanding:
+            return JsonResponse({"error": f"Qty In exceeds outstanding qty ({outstanding})"}, status=400)
+
+        part_no = req_doc.get("part_no")
+        item = spares_master.find_one({"part_no": part_no})
+        if not item:
+            return JsonResponse({"error": "Item not found in master"}, status=404)
+
+        current_qty = int(item.get("qty", 0))
+        new_qty = current_qty + qty_in
+        entry_date = datetime.now(ZoneInfo("Asia/Kolkata"))
+
+        spares_master.update_one(
+            {"part_no": part_no},
+            {
+                "$set": {"qty": new_qty},
+                "$push": {
+                    "history": {
+                        "type": "IN_RETURNED",
+                        "service_request_no": service_request_no,
+                        "qty": qty_in,
+                        "date": entry_date,
+                        "received_from": received_from,
+                        "received_back_by_cs": received_back_by_cs,
+                        "remarks": remarks,
+                        "project_name": item.get("project_name", ""),
+                        "item_name": item.get("item_name", ""),
+                        "item_loc": item.get("item_loc", ""),
+                        "rack_no": item.get("rack_no", ""),
+                    }
+                },
+            },
+        )
+
+        next_sl = len(returns) + 1
+        return_row = {
+            "slNo": next_sl,
+            "qtyReturnDate": date_in,
+            "qtyReturned": qty_in,
+            "handedOverByTs": received_from,
+            "receivedBackByCs": received_back_by_cs,
+        }
+
+        remaining_after = max(outstanding - qty_in, 0)
+        spares_returnable_requests_col.update_one(
+            {"serviceRequestNo": service_request_no},
+            {
+                "$push": {"returns": return_row},
+                "$set": {
+                    "updatedAt": entry_date,
+                    "status": "CLOSED" if remaining_after == 0 else "OPEN",
+                },
+            },
+        )
+
+        spares_in_returned_col.insert_one(
+            {
+                "serviceRequestNo": service_request_no,
+                "part_no": part_no,
+                "qty_in": qty_in,
+                "previous_qty": current_qty,
+                "new_qty": new_qty,
+                "date": entry_date,
+                "date_in": date_in,
+                "received_from": received_from,
+                "received_back_by_cs": received_back_by_cs,
+                "remarks": remarks,
+            }
+        )
+
+        spares_audit.insert_one(
+            {
+                "part_no": part_no,
+                "date": entry_date,
+                "service_request_no": service_request_no,
+                "in": qty_in,
+                "out": 0,
+                "qty_after": new_qty,
+                "user": user,
+                "remarks": remarks,
+                "project_name": item.get("project_name", ""),
+                "returnable": True,
+                "received_from": received_from,
+                "received_back_by_cs": received_back_by_cs,
+            }
+        )
+
+        return JsonResponse(
+            {
+                "status": "success",
+                "new_qty": new_qty,
+                "outstanding_qty": remaining_after,
+            }
+        )
+    except Exception as e:
+        print(traceback.format_exc())
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def spares_out_returnable_download_form(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        sr_raw = request.GET.get("serviceRequestNo")
+        if sr_raw in (None, ""):
+            return JsonResponse({"error": "serviceRequestNo is required"}, status=400)
+
+        service_request_no = int(sr_raw)
+        doc = spares_returnable_requests_col.find_one({"serviceRequestNo": service_request_no}, {"_id": 0})
+        if not doc:
+            return JsonResponse({"error": "Service Request not found"}, status=404)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Service Request Form"
+
+        ws.merge_cells("A1:H1")
+        ws["A1"] = "Customer Support Milcom"
+        ws["A1"].font = Font(bold=True, size=16)
+        ws["A1"].alignment = Alignment(horizontal="center")
+
+        ws.merge_cells("A2:H2")
+        ws["A2"] = "Service Request Form"
+        ws["A2"].font = Font(bold=True, size=12)
+        ws["A2"].alignment = Alignment(horizontal="center")
+
+        fields = [
+            ("Date", doc.get("date", "")),
+            ("Service Request No", doc.get("serviceRequestNo", "")),
+            ("Project Name", doc.get("project_name", "")),
+            ("Part No", doc.get("part_no", "")),
+            ("Item Name", doc.get("item_name", "")),
+            ("Qty Handed Over", doc.get("qty_handed_over", "")),
+            ("Handed Over By (CS)", doc.get("handed_over_by_cs", "")),
+            ("Received By (TS)", doc.get("received_by_ts", "")),
+        ]
+
+        row = 4
+        for k, v in fields:
+            ws[f"A{row}"] = k
+            ws[f"A{row}"].font = Font(bold=True)
+            ws.merge_cells(f"B{row}:H{row}")
+            ws[f"B{row}"] = v
+            row += 1
+
+        row += 1
+        table_headers = [
+            "SL.No.",
+            "Qty Return Date",
+            "Qty Returned",
+            "Handed Over By (TS)",
+            "Received Back By (CS)",
+        ]
+        for idx, header in enumerate(table_headers, start=1):
+            c = ws.cell(row=row, column=idx, value=header)
+            c.font = Font(bold=True)
+            c.alignment = Alignment(horizontal="center", vertical="center")
+
+        thin = Side(style="thin")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        for c in range(1, 6):
+            ws.cell(row=row, column=c).border = border
+
+        row += 1
+        returns = doc.get("returns", []) or []
+        min_rows = max(5, len(returns))
+        for i in range(min_rows):
+            entry = returns[i] if i < len(returns) else {}
+            values = [
+                entry.get("slNo", i + 1 if i < len(returns) else ""),
+                entry.get("qtyReturnDate", ""),
+                entry.get("qtyReturned", ""),
+                entry.get("handedOverByTs", ""),
+                entry.get("receivedBackByCs", ""),
+            ]
+            for col, val in enumerate(values, start=1):
+                cell = ws.cell(row=row + i, column=col, value=val)
+                cell.border = border
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+        ws.column_dimensions["A"].width = 12
+        ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 14
+        ws.column_dimensions["D"].width = 24
+        ws.column_dimensions["E"].width = 24
+        ws.column_dimensions["F"].width = 16
+        ws.column_dimensions["G"].width = 16
+        ws.column_dimensions["H"].width = 16
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        filename = f"Service_Request_{service_request_no}.xlsx"
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# ----------------------
+# OBD Management
+# ----------------------
+
+def obd_suggestions(request):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("obd_suggestions", request.method, dict(request.GET), error_response)
+        return JsonResponse(error_response, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        value = (request.GET.get("value") or "").strip()
+        # Start suggesting only when first 3 digits are entered.
+        if len(value) < 3:
+            return JsonResponse({"suggestions": []})
+
+        docs = obd_collection.find({}, {"_id": 0, "obdNo": 1}).sort("obdNo", 1).limit(3000)
+        suggestions = []
+        for doc in docs:
+            obd_val = doc.get("obdNo")
+            if obd_val is None:
+                continue
+            obd_str = str(obd_val)
+            if obd_str.startswith(value):
+                suggestions.append(obd_str)
+            if len(suggestions) >= 10:
+                break
+        response = {"suggestions": suggestions}
+        log_api_response("obd_suggestions", request.method, dict(request.GET), {"count": len(suggestions)})
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("obd_suggestions", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+@csrf_exempt
+def obd_out(request):
+    if request.method != "POST":
+        error_response = {"error": "Only POST allowed"}
+        log_api_response("obd_out", request.method, getattr(request, "body", None), error_response)
+        return JsonResponse(error_response, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or b"{}")
+        obd_no_raw = body.get("obdNo")
+        date_val = (body.get("date") or datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()).strip()
+        sent_to_location = (body.get("sentToLocation") or "").strip()
+        authorized_by = (body.get("authorizedBy") or "").strip()
+        project_name = (body.get("projectName") or "").strip()
+        item_details = (body.get("itemDetails") or "").strip()
+        courier_name = (body.get("courierName") or "").strip()
+        docket_number = (body.get("docketNumber") or "").strip()
+        docket_status = (body.get("docketStatus") or "In Transit").strip()
+        delivered_date = (body.get("deliveredDate") or "").strip()
+
+        if obd_no_raw in (None, ""):
+            return JsonResponse({"error": "OBD Number is required"}, status=400)
+        try:
+            obd_no = int(obd_no_raw)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "OBD Number must be an integer"}, status=400)
+
+        if obd_no < 0:
+            return JsonResponse({"error": "OBD Number must be non-negative"}, status=400)
+
+        if not date_val:
+            return JsonResponse({"error": "Date is required"}, status=400)
+
+        if not sent_to_location:
+            return JsonResponse({"error": "Sent To Location is required"}, status=400)
+
+        if not authorized_by:
+            return JsonResponse({"error": "Authorised By is required"}, status=400)
+
+        if not project_name:
+            return JsonResponse({"error": "Project is required"}, status=400)
+
+        if not item_details:
+            return JsonResponse({"error": "Item Details is required"}, status=400)
+
+        if docket_status not in ("Delivered", "In Transit"):
+            return JsonResponse({"error": "Docket Status must be Delivered or In Transit"}, status=400)
+
+        if docket_status == "Delivered" and not delivered_date:
+            return JsonResponse({"error": "Delivered Date is required when Docket Status is Delivered"}, status=400)
+
+        if docket_status == "In Transit":
+            delivered_date = ""
+
+        if obd_collection.find_one({"obdNo": obd_no}):
+            return JsonResponse({"error": "OBD Number already exists"}, status=409)
+
+        doc = {
+            "obdNo": obd_no,
+            "date": date_val,
+            "sentToLocation": sent_to_location,
+            "authorizedBy": authorized_by,
+            "projectName": project_name,
+            "itemDetails": item_details,
+            "courierName": courier_name,
+            "docketNumber": docket_number,
+            "docketStatus": docket_status,
+            "deliveredDate": delivered_date,
+            "createdBy": user.get("username"),
+            "createdAt": datetime.now(ZoneInfo("Asia/Kolkata")),
+            "updatedBy": user.get("username"),
+            "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata")),
+        }
+        obd_collection.insert_one(doc)
+        doc.pop("_id", None)
+
+        response = {"message": "OBD Out recorded", "data": doc}
+        log_api_response("obd_out", request.method, {"obdNo": obd_no}, response)
+        return JsonResponse(response, status=201)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("obd_out", request.method, getattr(request, "body", None), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+@csrf_exempt
+def obd_record(request, obd_no):
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        if request.method == "GET":
+            doc = obd_collection.find_one({"obdNo": int(obd_no)}, {"_id": 0})
+            if not doc:
+                response = {"error": "Not found"}
+                log_api_response("obd_record", request.method, {"obdNo": obd_no}, response)
+                return JsonResponse(response, status=404)
+            log_api_response("obd_record", request.method, {"obdNo": obd_no}, {"found": True})
+            return JsonResponse(doc, safe=False)
+
+        if request.method == "PUT":
+            body = json.loads(request.body or b"{}")
+            new_obd_raw = body.get("obdNo", obd_no)
+            try:
+                new_obd_no = int(new_obd_raw)
+            except (TypeError, ValueError):
+                return JsonResponse({"error": "OBD Number must be an integer"}, status=400)
+
+            if new_obd_no != int(obd_no):
+                if obd_collection.find_one({"obdNo": new_obd_no}):
+                    return JsonResponse({"error": "OBD Number already exists"}, status=409)
+
+            set_fields = {
+                "obdNo": new_obd_no,
+                "date": (body.get("date") or "").strip(),
+                "projectName": (body.get("projectName") or "").strip(),
+                "itemDetails": (body.get("itemDetails") or "").strip(),
+                "sentToLocation": (body.get("sentToLocation") or "").strip(),
+                "authorizedBy": (body.get("authorizedBy") or "").strip(),
+                "courierName": (body.get("courierName") or "").strip(),
+                "docketNumber": (body.get("docketNumber") or "").strip(),
+                "docketStatus": (body.get("docketStatus") or "In Transit").strip(),
+                "deliveredDate": (body.get("deliveredDate") or "").strip(),
+                "updatedBy": user.get("username"),
+                "updatedAt": datetime.now(ZoneInfo("Asia/Kolkata")),
+            }
+
+            if not set_fields["date"]:
+                return JsonResponse({"error": "Date is required"}, status=400)
+            if not set_fields["projectName"]:
+                return JsonResponse({"error": "Project is required"}, status=400)
+            if set_fields["docketStatus"] not in ("Delivered", "In Transit"):
+                return JsonResponse({"error": "Docket Status must be Delivered or In Transit"}, status=400)
+            if set_fields["docketStatus"] == "Delivered" and not set_fields["deliveredDate"]:
+                return JsonResponse({"error": "Delivered Date is required when Docket Status is Delivered"}, status=400)
+            if set_fields["docketStatus"] == "In Transit":
+                set_fields["deliveredDate"] = ""
+
+            result = obd_collection.update_one({"obdNo": int(obd_no)}, {"$set": set_fields})
+            if result.matched_count == 0:
+                response = {"error": "Not found"}
+                log_api_response("obd_record", request.method, {"obdNo": obd_no}, response)
+                return JsonResponse(response, status=404)
+
+            response = {"message": "OBD record updated"}
+            log_api_response("obd_record", request.method, {"obdNo": obd_no}, response)
+            return JsonResponse(response)
+
+        error_response = {"error": "Method not allowed"}
+        log_api_response("obd_record", request.method, {"obdNo": obd_no}, error_response)
+        return JsonResponse(error_response, status=405)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("obd_record", request.method, {"obdNo": obd_no}, {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+def obd_status(request):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("obd_status", request.method, dict(request.GET), error_response)
+        return JsonResponse(error_response, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        params = request.GET
+        query = _build_obd_status_query(params)
+        docs = list(obd_collection.find(query, {"_id": 0}).sort([("date", -1), ("obdNo", -1)]))
+        response = {"count": len(docs), "data": docs}
+        log_api_response("obd_status", request.method, dict(params), {"count": len(docs)})
+        return JsonResponse(response)
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("obd_status", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)
+
+
+def _build_obd_status_query(params):
+    from_date = (params.get("from") or "").strip()
+    to_date = (params.get("to") or "").strip()
+    docket_status = (params.get("docketStatus") or "All").strip()
+
+    query = {}
+    date_cond = _build_date_filter(from_date, to_date)
+    if date_cond:
+        query["date"] = date_cond
+
+    if docket_status == "Present":
+        query["docketNumber"] = {"$nin": ["", None]}
+    elif docket_status == "Absent":
+        query["$or"] = [
+            {"docketNumber": ""},
+            {"docketNumber": None},
+            {"docketNumber": {"$exists": False}},
+        ]
+    return query
+
+
+def obd_status_download(request):
+    if request.method != "GET":
+        error_response = {"error": "Only GET allowed"}
+        log_api_response("obd_status_download", request.method, dict(request.GET), error_response)
+        return JsonResponse(error_response, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        params = request.GET
+        query = _build_obd_status_query(params)
+        docs = list(obd_collection.find(query, {"_id": 0}).sort([("date", -1), ("obdNo", -1)]))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "OBD Status"
+
+        headers = [
+            "SL NO",
+            "OBD NO",
+            "DATE",
+            "SENT TO LOCATION",
+            "AUTHORISED BY",
+            "PROJECT",
+            "ITEM DETAILS",
+            "COURIER NAME",
+            "DOCKET NUMBER",
+            "DOCKET STATUS",
+            "DELIVERY STATUS",
+            "DELIVERED DATE",
+        ]
+        ws.append(headers)
+
+        header_font = Font(bold=True)
+        thin = Side(style="thin")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = border
+
+        for idx, row in enumerate(docs, start=1):
+            docket_number = row.get("docketNumber") or ""
+            docket_presence = "Present" if docket_number else "Absent"
+            ws.append([
+                idx,
+                row.get("obdNo", ""),
+                row.get("date", ""),
+                row.get("sentToLocation", ""),
+                row.get("authorizedBy", ""),
+                row.get("projectName", ""),
+                row.get("itemDetails", ""),
+                row.get("courierName", ""),
+                docket_number,
+                docket_presence,
+                row.get("docketStatus", ""),
+                row.get("deliveredDate", ""),
+            ])
+
+        for r in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=len(headers)):
+            for c in r:
+                c.border = border
+                c.alignment = Alignment(vertical="top", wrap_text=True)
+
+        for col in ws.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                val = "" if cell.value is None else str(cell.value)
+                if len(val) > max_len:
+                    max_len = len(val)
+            ws.column_dimensions[col_letter].width = min(max(12, max_len + 2), 45)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+        filename = f"OBD_{now.strftime('%d-%m-%Y_%H-%M-%S')}.xlsx"
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        log_api_response("obd_status_download", request.method, dict(params), {"count": len(docs)})
+        return response
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        error_response = {"error": str(e)}
+        log_api_response("obd_status_download", request.method, dict(request.GET), {**error_response, "stack_trace": stack_trace})
+        return JsonResponse(error_response, status=500)

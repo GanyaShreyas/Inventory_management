@@ -23,6 +23,13 @@ urlpatterns = [
     path('search/download_sticker', views.search_download_sticker),
     path('search/download_form', views.search_download_form),
 
+    # OBD management
+    path('obd/out', views.obd_out),  # POST /api/obd/out
+    path('obd/suggestions', views.obd_suggestions),  # GET /api/obd/suggestions?value=...
+    path('obd/<int:obd_no>', views.obd_record),  # GET/PUT /api/obd/:obdNo
+    path('obd/status', views.obd_status),  # GET /api/obd/status
+    path('obd/status/download', views.obd_status_download),  # GET /api/obd/status/download
+
     # Admin Projects
     path('admin/projects/add', views.admin_add_project),  # POST /api/admin/projects/add
     path('admin/projects/items/add', views.admin_add_item),  # POST /api/admin/projects/items/add
@@ -45,6 +52,12 @@ urlpatterns = [
     path("spares/in", views.spares_in), # POST /spares/in 
     path("spares/master", views.spares_master_list),  # GET /spares/master
     path("spares/out", views.spares_out), # POST /spares/out
+    path("spares/returnable/next-service-request", views.spares_returnable_next_service_request),  # GET
+    path("spares/out-returnable", views.spares_out_returnable),  # POST
+    path("spares/out-returnable/list", views.spares_out_returnable_list),  # GET
+    path("spares/out-returnable/<int:service_request_no>", views.spares_out_returnable_record),  # GET
+    path("spares/out-returnable/download-form", views.spares_out_returnable_download_form),  # GET
+    path("spares/in-returned", views.spares_in_returned),  # POST
     path("spares/audit", views.spares_audit_view), # GET /spares/audit
     path("spares/stock", views.stock_check), # GET /spares/stock
     path("spares/audit/filter", views.spares_audit_filter),  # GET /spares/audit/filter

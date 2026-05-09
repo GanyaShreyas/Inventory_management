@@ -12,7 +12,8 @@ import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react
 import UserDashboardChoice from './DashboardChoice';          
 import SparesManagement from './SparesManagement';  
 import DashboardChoice from './DashboardChoice';
-import { SparesMasterListPage, SparesInPage, SparesOutPage, ViewItemPage, StockCheckPage } from './SparesManagement';
+import { SparesMasterListPage, SparesInPage, SparesOutPage, ViewItemPage, StockCheckPage, SparesOutReturnablePage, SparesInReturnedPage } from './SparesManagement';
+import OBDManagement, { OBDOutPage, OBDStatusPage, UpdateOBDPage } from './OBDManagement';
 import ManageStores from './components/ManageStores';
 import { Outlet } from "react-router-dom";
 import { createPortal } from 'react-dom';
@@ -893,12 +894,13 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
             <table className={styles.table} style={{ minWidth: 1020 }}>
               <thead>
                 <tr>
-                  <th>ITEM TYPE</th><th>ITEM NAME *</th><th>PART NO *</th><th>SERIAL NO *</th><th>YEAR OF MFG</th><th>DEFECT</th><th>ACTIONS</th>
+                  <th>SL NO</th><th>ITEM TYPE</th><th>ITEM NAME *</th><th>PART NO *</th><th>SERIAL NO *</th><th>YEAR OF MFG</th><th>DEFECT</th><th>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
                   {items.map((it, idx) => (
                     <tr key={idx}>
+                      <td style={{ textAlign: 'center' }}>{idx + 1}</td>
                       <td>
                         <select
                           className={styles.control}
@@ -1245,12 +1247,13 @@ function RFDPage() {
             <table className={`${styles.table} ${styles.tableMin900}`}>
               <thead>
                 <tr>
-                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>RFD</th><th>RFD DATE</th><th>RECTIFICATION DETAILS</th><th>REMARKS</th><th>Dispatch Details</th>
+                  <th>SL NO</th><th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>RFD</th><th>RFD DATE</th><th>RECTIFICATION DETAILS</th><th>Dispatch Details</th><th>REMARKS</th>
                 </tr>
               </thead>
               <tbody>
                 {record.items?.map((it, idx) => (
                   <tr key={idx}>
+                    <td style={{ textAlign: 'center' }}>{idx + 1}</td>
                     <td>{it.equipmentType}</td>
                     <td>{it.itemName}</td>
                     <td>{it.partNumber}</td>
@@ -1287,16 +1290,16 @@ function RFDPage() {
                     <td>
                       <textarea
                         className={styles.control}
-                        value={it.itemFeedback1Details || ""}
-                        onChange={(e) => updateFeedback1Details(idx, e.target.value)}
+                        value={it.itemFeedback2Details || ""}
+                        onChange={(e) => updateFeedback2Details(idx, e.target.value)}
                         rows={1} // looks like an input initially
                       />
                     </td>
                     <td>
                       <textarea
                         className={styles.control}
-                        value={it.itemFeedback2Details || ""}
-                        onChange={(e) => updateFeedback2Details(idx, e.target.value)}
+                        value={it.itemFeedback1Details || ""}
+                        onChange={(e) => updateFeedback1Details(idx, e.target.value)}
                         rows={1} // looks like an input initially
                       />
                     </td>
@@ -1424,6 +1427,7 @@ function ItemOutPage() {
           else if (value === false) {
             console.log(`Clearing dateOut for item ${idx} since itemOut is now false`);
             updatedItem.dateOut = null;
+            updatedItem.dispatchThrough = '';
           }
           
           return updatedItem;
@@ -1450,6 +1454,15 @@ function ItemOutPage() {
       console.log('New items array:', newItems);
       return { ...prev, items: newItems };
     });
+  };
+
+  const updateDispatchThrough = (idx, value) => {
+    setRecord((prev) => ({
+      ...prev,
+      items: prev.items.map((it, i) =>
+        i === idx ? { ...it, dispatchThrough: value } : it
+      ),
+    }));
   };
 
   const updateRectificationDetails = (idx, value) => {
@@ -1480,6 +1493,15 @@ function ItemOutPage() {
       alert('Please enter rectification details for all items marked as "Item Out"');
       return;
     }
+
+    const itemsWithoutDispatchThrough = record.items.filter((item, idx) => {
+      const alreadyOutInDb = originalRecord?.items?.[idx]?.itemOut === true;
+      return item.itemOut && !alreadyOutInDb && (!item.dispatchThrough || item.dispatchThrough.trim() === '');
+    });
+    if (itemsWithoutDispatchThrough.length > 0) {
+      alert('Please select Dispatch Through for all items marked as "Item Out"');
+      return;
+    }
     
     // Confirm submission
     const confirmSubmit = window.confirm('Are you sure you want to update this record?');
@@ -1495,6 +1517,7 @@ function ItemOutPage() {
         serialNumber: it.serialNumber, 
         itemOut: !!it.itemOut, 
         dateOut: it.dateOut || null, 
+        dispatchThrough: it.dispatchThrough || '',
         itemRectificationDetails: it.itemRectificationDetails || '',
         itemFeedback1Details: it.itemFeedback1Details || '',
         itemFeedback2Details: it.itemFeedback2Details || ''
@@ -1602,7 +1625,7 @@ function ItemOutPage() {
             <table className={`${styles.table} ${styles.tableMin900}`}>
               <thead>
                 <tr>
-                  <th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>RECTIFICATION DETAILS</th><th>ITEMOUT</th><th>DATE OUT</th><th>REMARKS</th><th>Dispatch Details</th>
+                  <th>SL NO</th><th>TYPE</th><th>NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>RECTIFICATION DETAILS</th><th>ITEMOUT</th><th>DATE OUT</th><th>DISPATCH THROUGH</th><th>Dispatch Details</th><th>REMARKS</th>
                 </tr>
               </thead>
               <tbody>
@@ -1612,6 +1635,7 @@ function ItemOutPage() {
                   const itemOutLocked = originalRecord?.items?.[idx]?.itemOut === true;
                   return (
                     <tr key={idx} className={rowDisabled ? styles.rowDisabled : ''}>
+                      <td style={{ textAlign: 'center' }}>{idx + 1}</td>
                       <td>{it.equipmentType}</td>
                       <td>{it.itemName}</td>
                       <td>{it.partNumber}</td>
@@ -1633,18 +1657,31 @@ function ItemOutPage() {
                         {it.itemOut && !it.dateOut && <div className={styles.hintRequiredDate}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
                       </td>
                       <td>
-                        <textarea
+                        <select
                           className={styles.control}
-                          value={it.itemFeedback1Details || ""}
-                          onChange={(e) => updateFeedback1Details(idx, e.target.value)}
-                          rows={1} // looks like an input initially
-                        />
+                          value={itemOutLocked ? '' : (it.dispatchThrough || '')}
+                          onChange={(e) => updateDispatchThrough(idx, e.target.value)}
+                          disabled={itemOutLocked}
+                        >
+                          <option value="">SELECT</option>
+                          <option value="Direct Collection">Direct Collection</option>
+                          <option value="Through Shipping">Through Shipping</option>
+                        </select>
+                        {it.itemOut && !itemOutLocked && !it.dispatchThrough && <div className={styles.hintRequiredDate}>⚠️ DISPATCH THROUGH REQUIRED FOR ITEM OUT</div>}
                       </td>
                       <td>
                         <textarea
                           className={styles.control}
                           value={it.itemFeedback2Details || ""}
                           onChange={(e) => updateFeedback2Details(idx, e.target.value)}
+                          rows={1} // looks like an input initially
+                        />
+                      </td>
+                      <td>
+                        <textarea
+                          className={styles.control}
+                          value={it.itemFeedback1Details || ""}
+                          onChange={(e) => updateFeedback1Details(idx, e.target.value)}
                           rows={1} // looks like an input initially
                         />
                       </td>
@@ -2113,6 +2150,7 @@ function ManageProjects() {
 function SearchPage() {
   const [type, setType] = useState('passNo');
   const [fstatus, setFStatus] = useState('All');
+  const [fDispatchThrough, setFDispatchThrough] = useState('All');
   const [value, setValue] = useState('');
   const [projectPartNo, setProjectPartNo] = useState('');
   const [partNoSuggestions, setPartNoSuggestions] = useState([]);
@@ -2149,9 +2187,10 @@ function SearchPage() {
     { id: 'dateIn', label: 'DATE IN' },
     { id: 'dateRfd', label: 'DATE RFD' },
     { id: 'dateOut', label: 'DATE OUT' },
+    { id: 'dispatchThrough', label: 'DISPATCH THROUGH' },
     { id: 'rectificationDetails', label: 'RECTIFICATION DETAILS' },
-    { id: 'remarks1', label: 'REMARKS' },
     { id: 'remarks2', label: 'Dispatch Details' },
+    { id: 'remarks1', label: 'REMARKS' },
     { id: 'createdBy', label: 'CREATED BY' },
     { id: 'updatedBy', label: 'UPDATED BY' }
   ]), []);
@@ -2169,9 +2208,10 @@ function SearchPage() {
     'dateIn',
     'dateRfd',
     'dateOut',
+    'dispatchThrough',
     'rectificationDetails',
-    'remarks1',
-    'remarks2'
+    'remarks2',
+    'remarks1'
   ]), []);
 
   const [selectedReportColumns, setSelectedReportColumns] = useState(defaultSelectedReportColumns);
@@ -2354,9 +2394,10 @@ function SearchPage() {
           dateIn: String(dateInFmt || ""),
           dateRfd: String(dateRfdFmt || ""),
           dateOut: String(dateOutFmt || ""),
+          dispatchThrough: String(item.dispatchThrough || ""),
           rectificationDetails: String(item.itemRectificationDetails || ""),
-          remarks1: String(item.itemFeedback1Details || ""),
           remarks2: String(item.itemFeedback2Details || ""),
+          remarks1: String(item.itemFeedback1Details || ""),
           createdBy: String(doc.createdBy || ""),
           updatedBy: String(doc.updatedBy || "")
         });
@@ -2517,6 +2558,7 @@ function SearchPage() {
     setResult(null);
     setStatus('');
     setFStatus('All');
+    setFDispatchThrough('All');
     setHasViewedReport(false);
     setColumnFilterAllowedValues({});
     setColumnFilterDraftValues({});
@@ -2535,6 +2577,7 @@ function SearchPage() {
     setFrom('');
     setTo('');
     setFStatus('All');
+    setFDispatchThrough('All');
     setProjectValue('');
   }
 
@@ -2561,6 +2604,7 @@ function SearchPage() {
       if (from) params.set('from', from);
       if (to) params.set('to', to);
       params.set('status',fstatus);
+      params.set('dispatchThrough', fDispatchThrough);
       const res = await fetch(`${apiBase()}/search?${params.toString()}`, { headers: { ...authHeaders() } });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed');
@@ -2910,6 +2954,17 @@ function SearchPage() {
               <option value = "RFD">RFD</option>
             </select>
           </label>
+          <label className={styles.label}>DISPATCH THROUGH
+            <select
+              className={styles.control}
+              value={fDispatchThrough}
+              onChange={(e) => setFDispatchThrough(e.target.value)}
+            >
+              <option value="All">ALL</option>
+              <option value="Direct Collection">Direct Collection</option>
+              <option value="Through Shipping">Through Shipping</option>
+            </select>
+          </label>
           {type === 'serialNumber' && (
             <label className={styles.label}>PROJECT NAME
               <select
@@ -3212,6 +3267,7 @@ function EditPage() {
       itemOut: false,
       itemRfd: false,
       dateOut: null,
+      dispatchThrough: '',
       dateRfd: null
     };
 
@@ -3321,6 +3377,7 @@ function EditPage() {
           else if (key === 'itemOut' && value === false) {
             console.log(`Clearing dateOut for item ${idx} since itemOut is now false`);
             updatedItem.dateOut = null;
+            updatedItem.dispatchThrough = '';
           }
 
           // Auto-set dateRfd when itemRfd is checked and no dateRfd exists
@@ -3347,7 +3404,7 @@ function EditPage() {
       alert(`Maximum ${MAX_ITEMS_PER_PASS} items are allowed per pass.`);
       return;
     }
-    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: '', itemName: '', partNumber: '', serialNumber: '', yearOfMfg: '', defectDetails: '', itemIn: true, itemOut: false, itemRfd: false, dateOut: null, dateRfd: null, itemRectificationDetails: '', itemFeedback1Details: '', itemFeedback2Details: ''}] }));
+    setDoc((prev) => ({ ...prev, items: [...prev.items, { equipmentType: '', itemName: '', partNumber: '', serialNumber: '', yearOfMfg: '', defectDetails: '', itemIn: true, itemOut: false, itemRfd: false, dateOut: null, dispatchThrough: '', dateRfd: null, itemRectificationDetails: '', itemFeedback1Details: '', itemFeedback2Details: ''}] }));
   };
 
   const deleteItem = (idx) => {
@@ -3396,6 +3453,15 @@ function EditPage() {
     const itemsWithoutDetails = doc.items.filter(item => item.itemRfd && (!item.itemRectificationDetails || item.itemRectificationDetails.trim() === ''));
     if (itemsWithoutDetails.length > 0) {
       alert('Please enter rectification details for all items marked as "Item RFD"');
+      return;
+    }
+
+    const itemsWithoutDispatchThrough = doc.items.filter((item, idx) => {
+      const alreadyOutInDb = prevData?.items?.[idx]?.itemOut === true;
+      return item.itemOut && !alreadyOutInDb && (!item.dispatchThrough || item.dispatchThrough.trim() === '');
+    });
+    if (itemsWithoutDispatchThrough.length > 0) {
+      alert('Please select Dispatch Through for all items marked as "Item Out"');
       return;
     }
 
@@ -3556,13 +3622,16 @@ function EditPage() {
               <table className={styles.table} style={{ minWidth: '1200px' }}>
                 <thead>
                   <tr>
-                    <th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>ITEMOUT</th><th>RFD</th><th>DATE OUT</th><th>DATE RFD</th><th>RECTIFICATION DETAILS</th><th>REMARKS</th><th>Dispatch Details</th>
+                    <th>SL NO</th><th>ITEM TYPE</th><th>ITEM NAME</th><th>PART NO</th><th>SERIAL NO</th><th>YEAR OF MFG</th><th>DEFECT</th><th>ITEMOUT</th><th>RFD</th><th>DATE OUT</th><th>DISPATCH THROUGH</th><th>DATE RFD</th><th>RECTIFICATION DETAILS</th><th>Dispatch Details</th><th>REMARKS</th>
                     {isEditing && <th style={{ minWidth: '100px', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {doc?.items?.map((it, idx) => (
+                  {doc?.items?.map((it, idx) => {
+                    const alreadyOutInDb = prevData?.items?.[idx]?.itemOut === true;
+                    return (
                     <tr key={idx}>
+                      <td style={{ textAlign: 'center' }}>{idx + 1}</td>
                       <td>
                         <select
                           className={styles.control}
@@ -3628,6 +3697,19 @@ function EditPage() {
                         {it.itemOut && !it.dateOut && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
                       </td>
                       <td>
+                        <select
+                          className={styles.control}
+                          value={it.dispatchThrough || ''}
+                          onChange={(e) => updateItem(idx, 'dispatchThrough', e.target.value)}
+                          disabled={!isEditing || alreadyOutInDb}
+                        >
+                          <option value="">SELECT</option>
+                          <option value="Direct Collection">Direct Collection</option>
+                          <option value="Through Shipping">Through Shipping</option>
+                        </select>
+                        {it.itemOut && !alreadyOutInDb && !it.dispatchThrough && <div style={{ fontSize: '0.75rem', color: '#ff6b6b', marginTop: '2px' }}>⚠️ DISPATCH THROUGH REQUIRED FOR ITEM OUT</div>}
+                      </td>
+                      <td>
                         <input 
                           type="date" 
                           className={styles.control} 
@@ -3663,8 +3745,8 @@ function EditPage() {
                       <td>
                         <textarea
                             className={styles.control}
-                            value={it.itemFeedback1Details || ""}
-                            onChange={(e) => updateItem(idx, 'itemFeedback1Details', e.target.value)}
+                            value={it.itemFeedback2Details || ""}
+                            onChange={(e) => updateItem(idx, 'itemFeedback2Details', e.target.value)}
                             readOnly={!isEditing}
                             rows={1} // looks like an input initially
                           />
@@ -3672,8 +3754,8 @@ function EditPage() {
                       <td>
                         <textarea
                             className={styles.control}
-                            value={it.itemFeedback2Details || ""}
-                            onChange={(e) => updateItem(idx, 'itemFeedback2Details', e.target.value)}
+                            value={it.itemFeedback1Details || ""}
+                            onChange={(e) => updateItem(idx, 'itemFeedback1Details', e.target.value)}
                             readOnly={!isEditing}
                             rows={1} // looks like an input initially
                           />
@@ -3700,7 +3782,8 @@ function EditPage() {
                         </td>
                       )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               {isEditing && (
@@ -3902,6 +3985,11 @@ function App() {
             <SparesManagement />
           </ProtectedRoute>
         } />
+        <Route path="/user/obd" element={
+          <ProtectedRoute requiredRole="user">
+            <OBDManagement />
+          </ProtectedRoute>
+        } />
         <Route path="/login" element={
           <LoginPage onLoggedIn={() => setAuthTick((t) => t + 1)} />
         } />
@@ -3972,6 +4060,21 @@ function App() {
             <SearchPage />
           </ProtectedRoute>
         } />
+        <Route path="/obd/out" element={
+          <ProtectedRoute requiredRole="user">
+            <OBDOutPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/obd/update" element={
+          <ProtectedRoute requiredRole="user">
+            <UpdateOBDPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/obd/status" element={
+          <ProtectedRoute requiredRole="user">
+            <OBDStatusPage />
+          </ProtectedRoute>
+        } />
         <Route path="/edit" element={
           <ProtectedRoute requiredRole="user">
             <EditPage />
@@ -3998,6 +4101,16 @@ function App() {
         <Route path="/spares/spares-out" element={
           <ProtectedRoute requiredRole="user">
             <SparesOutPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/spares/spares-out-returnable" element={
+          <ProtectedRoute requiredRole="user">
+            <SparesOutReturnablePage />
+          </ProtectedRoute>
+        } />
+        <Route path="/spares/spares-in-returned" element={
+          <ProtectedRoute requiredRole="user">
+            <SparesInReturnedPage />
           </ProtectedRoute>
         } />
         <Route path="/spares/view-item" element={

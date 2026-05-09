@@ -15,6 +15,7 @@ function Sidebar() {
   ] : [
     { to: '/user/dashboard', label: 'COMPLAINTS MANAGEMENT' },
     { to: '/user/spares', label: 'SPARES MANAGEMENT' },
+    { to: '/user/obd', label: 'OBD' },
   ];
 
   return (

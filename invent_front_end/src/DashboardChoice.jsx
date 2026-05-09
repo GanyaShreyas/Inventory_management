@@ -30,6 +30,11 @@ export default function DashboardChoice() {
               <div className={styles.cardDesc}>MANAGE SPARES.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/user/spares">OPEN</Link>
             </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>OBD</div>
+              <div className={styles.cardDesc}>MANAGE OBD OUTBOUND RECORDS.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/user/obd">OPEN</Link>
+            </div>
           </div>
         </div>
         <Footer />

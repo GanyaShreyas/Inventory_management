@@ -144,8 +144,7 @@ function Sticker() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            const defaultName = `${new Date().toISOString().split('T')[0]}_item_details.xlsx`;
-            a.download = defaultName;
+            a.download = `STICKER_${value}.xlsx`;
             a.click();
             window.URL.revokeObjectURL(url);
         } catch (err) {
@@ -205,8 +204,7 @@ function Sticker() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            const defaultName = `${new Date().toISOString().split('T')[0]}_item_details.xlsx`;
-            a.download = defaultName;
+            a.download = `HANDOVER_${value}.xlsx`;
             a.click();
             window.URL.revokeObjectURL(url);
         } catch (err) {
