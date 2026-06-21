@@ -636,8 +636,8 @@
 .reportTh {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: center;
+  gap: 4px;
 }
 
 .columnFilterBtn {
@@ -824,6 +824,63 @@
 }
 .btnPrimary { background: linear-gradient(135deg, #0f6eb1 0%, #2196f3 100%); color: #fff; }
 .btnPrimary:hover { filter: brightness(1.05); box-shadow: 0 6px 18px rgba(15,110,177,.25); }
+
+/* ── Section Sub-Nav (horizontal tab bar on sub-pages) ── */
+.sectionNav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: linear-gradient(90deg, #0f6eb1 60%, #2196f3 100%);
+  border-radius: 10px;
+  padding: 4px 6px;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 8px rgba(15,110,177,0.12);
+  overflow-x: auto;
+}
+.sectionNavBack {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-decoration: none;
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.sectionNavBack:hover {
+  background: rgba(255,255,255,0.15);
+}
+.sectionNavLinks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  overflow-x: auto;
+}
+.sectionNavLink {
+  display: inline-block;
+  color: rgba(255,255,255,0.85);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 7px;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  letter-spacing: 0.3px;
+}
+.sectionNavLink:hover {
+  background: rgba(255,255,255,0.13);
+  color: #fff;
+}
+.sectionNavLinkActive {
+  background: rgba(255,255,255,0.22);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
 .btnGhost { background: #fff; color: #0f6eb1; border-color: #b3d6ef; }
 .btnGhost:hover { background: #eaf6fd; }
 .btnDanger { background: #ef4444; color: #fff; }

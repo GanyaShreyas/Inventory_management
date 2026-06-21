@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './styles.module.css';
 import { useNavigate } from 'react-router-dom';
 import { apiBase, authHeaders } from '../apiConfig';
+import SectionNav from './SectionNav';
 
 function Sticker() {
     const [type, setType] = useState('sticker');
@@ -212,10 +213,36 @@ function Sticker() {
         }
     }
 
+    const download_acknowledgement = async () => {
+        try {
+            if (!value) {
+                alert('Enter the Private Pass No');
+                return;
+            }
+            const params = new URLSearchParams();
+            params.set('passNo', value);
+            const res = await fetch(`${apiBase()}/search/download_acknowledgement?${params.toString()}`, { headers: { ...authHeaders() } });
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData?.error || 'Download failed');
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ACKNOWLEDGEMENT_${value}.xlsx`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
     return (
         <div className={styles.page}>
+            <SectionNav section="complaints" />
             <div className={styles.pageHeader}>
-                <div className={styles.pageTitle}>PRINT STICKERS/HANDING OVER FORM</div>
+                <div className={styles.pageTitle}>PRINT FORMS</div>
                 <div className={styles.pageActions}>
                     <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => { navigate('/user/dashboard'); clearForm() }}>BACK</button>
                 </div>
@@ -230,6 +257,7 @@ function Sticker() {
                         >
                             <option value="sticker">PRINT STICKER</option>
                             <option value="handoverform">HANDOVER FORM</option>
+                            <option value="acknowledgement">PRINT ACKNOWLEDGEMENT</option>
                         </select>
                     </label>
                     <label className={styles.label}>PRIVATE PASS NO:
@@ -278,8 +306,10 @@ function Sticker() {
                     ) : null}
                 </div>
                 <div className={styles.pageActions}>
-                    {type == "sticker" ? (
+                    {type === "sticker" ? (
                         <button className={`${styles.btn} ${styles.btnGhost}`} onClick={download_sticker}>DOWNLOAD STICKERS</button>
+                    ) : type === "acknowledgement" ? (
+                        <button className={`${styles.btn} ${styles.btnGhost}`} onClick={download_acknowledgement}>DOWNLOAD ACKNOWLEDGEMENT</button>
                     ) : (<>
                         <button className={`${styles.btn} ${styles.btnGhost}`} onClick={viewItems}>VIEW ITEMS</button>
                         <button className={`${styles.btn} ${styles.btnGhost}`} onClick={download_form}>DOWNLOAD FORM</button>

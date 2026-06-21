@@ -5,6 +5,7 @@ import Header from './components/header';
 import Sidebar from './components/sidebar';
 import Footer from './components/footer';
 import { apiBase, authHeaders } from './apiConfig';
+import SectionNav from './components/SectionNav';
 
 export default function OBDManagement() {
   const navigate = useNavigate();
@@ -125,6 +126,7 @@ export function OBDOutPage() {
 
   return (
     <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+      <SectionNav section="obd" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>OBD OUT</div>
         <div className={styles.pageActions}>
@@ -280,6 +282,7 @@ export function UpdateOBDPage() {
 
   return (
     <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+      <SectionNav section="obd" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>UPDATE OBD</div>
         <div className={styles.pageActions}>
@@ -437,6 +440,7 @@ export function OBDStatusPage() {
 
   return (
     <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+      <SectionNav section="obd" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>OBD STATUS</div>
         <div className={styles.pageActions}>

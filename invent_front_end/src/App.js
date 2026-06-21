@@ -14,7 +14,9 @@ import SparesManagement from './SparesManagement';
 import DashboardChoice from './DashboardChoice';
 import { SparesMasterListPage, SparesInPage, SparesOutPage, ViewItemPage, StockCheckPage, SparesOutReturnablePage, SparesInReturnedPage } from './SparesManagement';
 import OBDManagement, { OBDOutPage, OBDStatusPage, UpdateOBDPage } from './OBDManagement';
+import ConfigurationManagement, { ConfigEditPage, ConfigViewPage } from './ConfigurationManagement';
 import ManageStores from './components/ManageStores';
+import SectionNav from './components/SectionNav';
 import { Outlet } from "react-router-dom";
 import { createPortal } from 'react-dom';
 import { apiBase, authHeaders } from './apiConfig';
@@ -188,6 +190,11 @@ function AdminDashboard() {
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/add-user">OPEN</Link>
             </div>
             <div className={styles.card}>
+              <div className={styles.cardTitle}>LIST USERS</div>
+              <div className={styles.cardDesc}>View all users and delete if needed.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/list-users">OPEN</Link>
+            </div>
+            <div className={styles.card}>
               <div className={styles.cardTitle}>RESET USER PASSWORD</div>
               <div className={styles.cardDesc}>Reset any user's password by username.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/reset-password">OPEN</Link>
@@ -281,8 +288,8 @@ function Dashboard() {
               </button>
             </div>
             <div className={styles.card}>
-              <div className={styles.cardTitle}>PRINT STICKERS/HANDING OVER FORM</div>
-              <div className={styles.cardDesc}>Print stickers for items or form to handover for testing.</div>
+              <div className={styles.cardTitle}>PRINT FORMS</div>
+              <div className={styles.cardDesc}>Print stickers, handover form, or acknowledgement.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/print-sticker">OPEN</Link>
             </div>
           </div>
@@ -394,6 +401,152 @@ function AdminAddUserPage() {
           </div>
         </form>
       </div>
+        </div>
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
+function AdminListUsersPage() {
+  const navigate = useNavigate();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editUser, setEditUser] = useState(null); // { username, name, designation, mobile, store }
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBase()}/admin/users/list`, { headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      setUsers(data.users || []);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
+
+  const handleDelete = async (username) => {
+    const confirmDel = window.confirm(`Are you sure you want to delete user "${username}"?\n\nThis action cannot be undone.`);
+    if (!confirmDel) return;
+    try {
+      const res = await fetch(`${apiBase()}/admin/users/delete`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      alert(data.message || 'User deleted');
+      fetchUsers();
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  const handleEdit = (u) => {
+    setEditUser({ username: u.username, name: u.name || '', designation: u.designation || '', mobile: u.mobile || '' });
+  };
+
+  const handleEditSave = async () => {
+    if (!editUser) return;
+    try {
+      const res = await fetch(`${apiBase()}/admin/users/edit`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(editUser),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      alert(data.message || 'User updated');
+      setEditUser(null);
+      fetchUsers();
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  return (
+    <div className={styles.inventoryLayout}>
+      <Sidebar />
+      <div className={styles.inventoryMain}>
+        <Header />
+        <div className={styles.page}>
+          <div className={styles.pageHeader}>
+            <div className={styles.pageTitle}>ADMIN - LIST USERS</div>
+            <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/admin/admin-dashboard')}>BACK</button>
+          </div>
+          <div className={styles.card}>
+            {loading ? <div>Loading...</div> : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className={styles.productsTable} style={{ minWidth: '800px' }}>
+                  <thead>
+                    <tr>
+                      <th>SL</th>
+                      <th>NAME</th>
+                      <th>USERNAME</th>
+                      <th>DESIGNATION</th>
+                      <th>MOBILE</th>
+                      <th>ROLE</th>
+                      <th>ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((u, idx) => (
+                      <tr key={u.id}>
+                        <td>{idx + 1}</td>
+                        <td>{u.name}</td>
+                        <td>{u.username}</td>
+                        <td>{u.designation || '-'}</td>
+                        <td>{u.mobile || '-'}</td>
+                        <td><span className={styles.pill}>{u.role?.toUpperCase()}</span></td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button
+                            className={`${styles.btn} ${styles.btnPrimary}`}
+                            onClick={() => handleEdit(u)}
+                            style={{ padding: '4px 12px', fontSize: '0.8rem', marginRight: 6 }}
+                          >EDIT</button>
+                          <button
+                            className={`${styles.btn} ${styles.btnDanger}`}
+                            onClick={() => handleDelete(u.username)}
+                            style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                          >DELETE</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {users.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center' }}>No users found</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Edit User Modal */}
+          {editUser && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+              <div style={{ background: '#fff', borderRadius: 12, minWidth: 360, maxWidth: 480, width: '90%', padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+                <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 16 }}>EDIT USER — {editUser.username}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <label className={styles.label}>NAME
+                    <input className={styles.control} value={editUser.name} onChange={(e) => setEditUser({ ...editUser, name: e.target.value })} />
+                  </label>
+                  <label className={styles.label}>DESIGNATION
+                    <input className={styles.control} value={editUser.designation} onChange={(e) => setEditUser({ ...editUser, designation: e.target.value })} />
+                  </label>
+                  <label className={styles.label}>MOBILE NUMBER
+                    <input className={styles.control} value={editUser.mobile} onChange={(e) => setEditUser({ ...editUser, mobile: e.target.value })} />
+                  </label>
+                </div>
+                <div style={{ marginTop: 16, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setEditUser(null)}>CANCEL</button>
+                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={handleEditSave}>SAVE</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <Footer />
       </div>
@@ -854,6 +1007,7 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
 
   return (
     <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+      <SectionNav section="complaints" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>ITEM IN</div>
         <div className={styles.pageActions}>
@@ -1195,6 +1349,7 @@ function RFDPage() {
 
   return(
     <div className={`${styles.page} ${styles.pageScroll}`}>
+      <SectionNav section="complaints" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>RFD</div>
         <div className={styles.pageActions}>
@@ -1573,6 +1728,7 @@ function ItemOutPage() {
 
   return (
     <div className={`${styles.page} ${styles.pageScroll}`}>
+      <SectionNav section="complaints" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>ITEM OUT</div>
         <div className={styles.pageActions}>
@@ -2094,7 +2250,7 @@ function ManageProjects() {
       // Properly quote and escape all project names, and ensure all are included
       const rows = projects.map((proj, idx) => [
         idx + 1,
-        '"' + String(proj).replace(/"/g, '""') + '"'
+        '"' + String(proj).replace(/\r\n|\r|\n/g, ' ').replace(/"/g, '""') + '"'
       ]);
       let csvContent = header.join(',') + '\n';
       csvContent += rows.map(r => r.join(',')).join('\n');
@@ -2629,9 +2785,9 @@ function SearchPage() {
       const columnIds = selectedColumnsForRender.map((c) => c.id);
 
       const escapeCsv = (val) => {
-        const s = String(val ?? '');
+        const s = String(val ?? '').replace(/\r\n|\r|\n/g, ' ');
         if (s.includes('"')) return `"${s.replace(/"/g, '""')}"`;
-        if (/[,\n]/.test(s)) return `"${s}"`;
+        if (s.includes(',')) return `"${s}"`;
         return s;
       };
 
@@ -2853,6 +3009,7 @@ function SearchPage() {
 
   return (
     <div className={styles.page}>
+      <SectionNav section="complaints" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>REPORT</div>
         <div className={styles.pageActions}>
@@ -3536,6 +3693,7 @@ function EditPage() {
 
   return (
     <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
+      <SectionNav section="complaints" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>EDIT/VIEW</div>
         <div className={styles.pageActions}>
@@ -3990,12 +4148,22 @@ function App() {
             <OBDManagement />
           </ProtectedRoute>
         } />
+        <Route path="/user/config" element={
+          <ProtectedRoute requiredRole="user">
+            <ConfigurationManagement />
+          </ProtectedRoute>
+        } />
         <Route path="/login" element={
           <LoginPage onLoggedIn={() => setAuthTick((t) => t + 1)} />
         } />
         <Route path="/admin/add-user" element={
           <ProtectedRoute requiredRole="admin">
             <AdminAddUserPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/list-users" element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminListUsersPage />
           </ProtectedRoute>
         } />
         <Route path="/admin/reset-password" element={
@@ -4073,6 +4241,16 @@ function App() {
         <Route path="/obd/status" element={
           <ProtectedRoute requiredRole="user">
             <OBDStatusPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/config/edit" element={
+          <ProtectedRoute requiredRole="user">
+            <ConfigEditPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/config/view" element={
+          <ProtectedRoute requiredRole="user">
+            <ConfigViewPage />
           </ProtectedRoute>
         } />
         <Route path="/edit" element={

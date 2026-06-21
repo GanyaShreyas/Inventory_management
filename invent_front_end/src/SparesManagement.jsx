@@ -4,11 +4,13 @@ import Footer from './components/footer';
 import styles from './components/styles.module.css';
 import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+// eslint-disable-next-line no-unused-vars
 import axios from 'axios';
-import { useEffect } from 'react';
 import React from 'react';
 import { apiBase, authHeaders } from './apiConfig';
+import SectionNav from './components/SectionNav';
 
 /** Master/API may return bin_nos as array, comma-separated string, or missing — always a string[] for .map / .join */
 function normalizeBinNos(value) {
@@ -49,6 +51,224 @@ function usePartSuggestList(partSearch) {
     return () => clearTimeout(t);
   }, [partSearch]);
   return matches;
+}
+
+/* ───────── Reusable multi-select column-filter hook (excel-like) ───────── */
+function useColumnFilters(allRows, columnDefs) {
+  const [columnFilterAllowedValues, setColumnFilterAllowedValues] = useState({});
+  const [columnFilterDraftValues, setColumnFilterDraftValues] = useState({});
+  const [openColumnFilterColId, setOpenColumnFilterColId] = useState(null);
+  const [filterPopoverPos, setFilterPopoverPos] = useState(null);
+  const filterPopoverRef = useRef(null);
+
+  const columnFilterAllowedSets = useMemo(() => {
+    const out = {};
+    for (const [k, v] of Object.entries(columnFilterAllowedValues)) {
+      if (!Array.isArray(v)) continue;
+      out[k] = new Set(v.map(x => String(x ?? '')));
+    }
+    return out;
+  }, [columnFilterAllowedValues]);
+
+  const getUniqueFilterValues = (targetColId) => {
+    if (!targetColId) return [];
+    const col = columnDefs.find(c => c.id === targetColId);
+    if (!col) return [];
+    const rowsForUniques = allRows.filter(r => {
+      for (const [colId, allowedSet] of Object.entries(columnFilterAllowedSets)) {
+        if (colId === targetColId) continue;
+        const c = columnDefs.find(cd => cd.id === colId);
+        if (!c) continue;
+        if (!allowedSet.has(String(c.accessor(r) ?? ''))) return false;
+      }
+      return true;
+    });
+    const uniqueSet = new Set();
+    rowsForUniques.forEach(r => uniqueSet.add(String(col.accessor(r) ?? '')));
+    return Array.from(uniqueSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  };
+
+  const visibleRows = useMemo(() => {
+    let rows = allRows;
+    for (const [colId, allowedSet] of Object.entries(columnFilterAllowedSets)) {
+      const col = columnDefs.find(c => c.id === colId);
+      if (!col) continue;
+      rows = rows.filter(r => allowedSet.has(String(col.accessor(r) ?? '')));
+      if (rows.length === 0) return [];
+    }
+    return rows;
+  }, [allRows, columnFilterAllowedSets, columnDefs]);
+
+  const openColumnFilter = (colId, anchorEvent) => {
+    const uniqueVals = getUniqueFilterValues(colId);
+    const appliedVals = columnFilterAllowedValues[colId];
+    const initialDraft = Array.isArray(appliedVals)
+      ? uniqueVals.filter(v => new Set(appliedVals.map(x => String(x ?? ''))).has(String(v ?? '')))
+      : uniqueVals;
+    setColumnFilterDraftValues(prev => ({ ...prev, [colId]: initialDraft }));
+    if (anchorEvent?.currentTarget) {
+      const r = anchorEvent.currentTarget.getBoundingClientRect();
+      const w = 280;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+      const pad = 12;
+      const maxDesired = 420;
+      const minPreferred = 200;
+      const belowTop = r.bottom + 6;
+      const spaceBelow = window.innerHeight - belowTop - pad;
+      const spaceAbove = r.top - pad;
+      let top, maxH;
+      if (spaceBelow >= minPreferred || spaceBelow >= spaceAbove) {
+        top = belowTop;
+        maxH = Math.min(maxDesired, Math.max(160, spaceBelow));
+      } else {
+        maxH = Math.min(maxDesired, Math.max(160, spaceAbove));
+        top = Math.max(pad, r.top - maxH - 6);
+      }
+      setFilterPopoverPos({ top, left, width: w, maxHeight: maxH });
+    } else {
+      setFilterPopoverPos(null);
+    }
+    setOpenColumnFilterColId(colId);
+  };
+
+  const cancelColumnFilter = (colId) => {
+    if (!colId) return;
+    setColumnFilterDraftValues(prev => {
+      const next = { ...prev };
+      delete next[colId];
+      return next;
+    });
+    setOpenColumnFilterColId(null);
+    setFilterPopoverPos(null);
+  };
+
+  const applyColumnFilter = (colId) => {
+    if (!colId) return;
+    const uniqueVals = getUniqueFilterValues(colId);
+    const draftVals = Array.isArray(columnFilterDraftValues[colId]) ? columnFilterDraftValues[colId] : uniqueVals;
+    const draftSet = new Set(draftVals.map(x => String(x ?? '')));
+    const normalizedDraft = uniqueVals.filter(v => draftSet.has(String(v ?? '')));
+    setColumnFilterAllowedValues(prev => {
+      if (normalizedDraft.length === uniqueVals.length) {
+        const { [colId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [colId]: normalizedDraft };
+    });
+    cancelColumnFilter(colId);
+  };
+
+  useEffect(() => {
+    if (!openColumnFilterColId) return;
+    const onMouseDown = e => {
+      if (!filterPopoverRef.current) return;
+      if (!filterPopoverRef.current.contains(e.target)) cancelColumnFilter(openColumnFilterColId);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [openColumnFilterColId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!openColumnFilterColId) return;
+    const onScroll = e => {
+      const t = e.target;
+      const pop = filterPopoverRef.current;
+      if (!(t instanceof Element) || !pop) { cancelColumnFilter(openColumnFilterColId); return; }
+      if (t === pop || pop.contains(t)) return;
+      cancelColumnFilter(openColumnFilterColId);
+    };
+    document.addEventListener('scroll', onScroll, true);
+    return () => document.removeEventListener('scroll', onScroll, true);
+  }, [openColumnFilterColId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return {
+    visibleRows,
+    openColumnFilterColId,
+    filterPopoverPos,
+    filterPopoverRef,
+    openColumnFilter,
+    cancelColumnFilter,
+    applyColumnFilter,
+    getUniqueFilterValues,
+    columnFilterDraftValues,
+    setColumnFilterDraftValues,
+  };
+}
+
+/* ───────── Column filter popover (portal) ───────── */
+function ColumnFilterPopover({ hook, columns }) {
+  const { openColumnFilterColId, filterPopoverPos, filterPopoverRef, cancelColumnFilter, applyColumnFilter, getUniqueFilterValues, columnFilterDraftValues, setColumnFilterDraftValues } = hook;
+  if (!openColumnFilterColId || !filterPopoverPos) return null;
+  const colDef = columns.find(c => c.id === openColumnFilterColId);
+  const colLabel = colDef ? colDef.label : '';
+  const uniqueValues = getUniqueFilterValues(openColumnFilterColId);
+  const draftArr = columnFilterDraftValues[openColumnFilterColId];
+  const draftSet = draftArr ? new Set(draftArr.map(x => String(x ?? ''))) : new Set(uniqueValues.map(x => String(x ?? '')));
+  const isAllSelected = uniqueValues.every(v => draftSet.has(String(v ?? '')));
+
+  return createPortal(
+    <div ref={filterPopoverRef} role="dialog" aria-modal="true" onWheel={e => e.stopPropagation()}
+      style={{ position: 'fixed', top: filterPopoverPos.top, left: filterPopoverPos.left, width: filterPopoverPos.width || 280, maxHeight: filterPopoverPos.maxHeight ?? 420, zIndex: 2147483000, boxSizing: 'border-box' }}
+      className={styles.columnFilterPopoverPortal}>
+      <div className={styles.columnFilterPopoverTitle}>Filter {colLabel}</div>
+      <div className={styles.columnFilterPopoverScroll}>
+        <div className={styles.columnFilterValueList}>
+          <label className={styles.columnFilterValueItem}>
+            <input type="checkbox" checked={isAllSelected}
+              onChange={e => setColumnFilterDraftValues(prev => ({ ...prev, [openColumnFilterColId]: e.target.checked ? [...uniqueValues] : [] }))} />
+            <span>Select All</span>
+          </label>
+          {uniqueValues.length === 0 ? (
+            <div style={{ color: '#999', fontStyle: 'italic', padding: '4px 0' }}>No values</div>
+          ) : (
+            uniqueValues.map(val => {
+              const valueStr = String(val ?? '');
+              const displayVal = valueStr === '' ? '(Blank)' : valueStr;
+              return (
+                <label key={valueStr} className={styles.columnFilterValueItem}>
+                  <input type="checkbox" checked={draftSet.has(valueStr)}
+                    onChange={e => {
+                      setColumnFilterDraftValues(prev => {
+                        const baseSet = new Set((prev?.[openColumnFilterColId] || uniqueValues).map(x => String(x ?? '')));
+                        if (e.target.checked) baseSet.add(valueStr); else baseSet.delete(valueStr);
+                        return { ...prev, [openColumnFilterColId]: Array.from(baseSet) };
+                      });
+                    }} />
+                  <span title={displayVal}>{displayVal}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      </div>
+      <div className={styles.columnFilterPopoverFooter}>
+        <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => applyColumnFilter(openColumnFilterColId)}>OK</button>
+        <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => cancelColumnFilter(openColumnFilterColId)}>Cancel</button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/* ───────── Filter icon button for table headers ───────── */
+function FilterIconBtn({ colId, hook }) {
+  const { openColumnFilterColId, openColumnFilter, cancelColumnFilter, columnFilterAllowedValues } = hook;
+  const hasFilter = Array.isArray(columnFilterAllowedValues?.[colId]);
+  return (
+    <button type="button" title="Filter column" aria-label={`Filter ${colId}`}
+      className={styles.columnFilterIconBtn}
+      style={hasFilter ? { color: '#2563eb' } : undefined}
+      onMouseDown={e => e.stopPropagation()}
+      onClick={e => {
+        e.stopPropagation();
+        if (openColumnFilterColId === colId) cancelColumnFilter(colId);
+        else openColumnFilter(colId, e);
+      }}>
+      <svg width="14" height="14" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M2.5 4.5h7L6 8z" />
+      </svg>
+    </button>
+  );
 }
 
 export default function SparesManagement() {
@@ -120,6 +340,9 @@ function SparesMasterListPage({ adminMode = false, closePath } = {}) {
   const [showPartDropdown, setShowPartDropdown] = useState(false);
   const [editingExisting, setEditingExisting] = useState(false);
 
+  // List
+  const [allItems, setAllItems] = useState([]);
+
   const storeOptions = useMemo(() => {
     const s = new Set(stores);
     if (itemLoc && !s.has(itemLoc)) {
@@ -127,6 +350,14 @@ function SparesMasterListPage({ adminMode = false, closePath } = {}) {
     }
     return stores;
   }, [stores, itemLoc]);
+
+  const loadAllItems = async () => {
+    try {
+      const res = await fetch(`${apiBase()}/spares/master`, { headers: authHeaders() });
+      const data = await res.json();
+      setAllItems(data.items || []);
+    } catch (e) { console.error(e); }
+  };
 
   useEffect(() => {
     const loadStores = async () => {
@@ -139,6 +370,7 @@ function SparesMasterListPage({ adminMode = false, closePath } = {}) {
       }
     };
     loadStores();
+    loadAllItems();
   }, []);
 
   useEffect(() => {
@@ -225,6 +457,10 @@ function SparesMasterListPage({ adminMode = false, closePath } = {}) {
       setStatus("Please select a store.");
       return;
     }
+    if (!projectName.trim()) {
+      setStatus("Project name is required.");
+      return;
+    }
 
     const confirmSubmit = window.confirm(
       editingExisting
@@ -260,11 +496,52 @@ function SparesMasterListPage({ adminMode = false, closePath } = {}) {
       alert(editingExisting ? "Item updated in master list!" : "Item added to master list!");
       setStatus(editingExisting ? "Item updated" : "Item added");
       clearForm();
+      loadAllItems();
     } catch (err) {
       alert(err.message);
       setStatus(`Error: ${err.message}`);
     }
   };
+
+  const handleDelete = async (part_no) => {
+    if (!window.confirm(`Delete "${part_no}" and all related spares data?\nThis cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${apiBase()}/spares/master/delete`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ part_no }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Delete failed");
+      alert(data.message);
+      loadAllItems();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // Column definitions for multi-select filter
+  const masterColumns = useMemo(() => [
+    { id: 'part_no', label: 'PART NO', accessor: r => r.part_no ?? '' },
+    { id: 'item_name', label: 'ITEM NAME', accessor: r => r.item_name ?? '' },
+    { id: 'project_name', label: 'PROJECT NAME', accessor: r => (r.project_name || '').trim() || '' },
+    { id: 'item_loc', label: 'STORE', accessor: r => r.item_loc ?? '' },
+  ], []);
+
+  const masterColFilter = useColumnFilters(allItems, masterColumns);
+  const filteredItems = masterColFilter.visibleRows;
+
+  // Sort: items with empty project at bottom, then alphabetical by project
+  const sortedItems = useMemo(() => {
+    return [...filteredItems].sort((a, b) => {
+      const pA = (a.project_name || '').trim();
+      const pB = (b.project_name || '').trim();
+      if (!pA && pB) return 1;
+      if (pA && !pB) return -1;
+      if (pA !== pB) return pA.localeCompare(pB);
+      return (a.part_no || '').localeCompare(b.part_no || '');
+    });
+  }, [filteredItems]);
 
   return (
     <div className={styles.page}>
@@ -343,12 +620,12 @@ function SparesMasterListPage({ adminMode = false, closePath } = {}) {
             </label>
 
             <label className={styles.label}>
-              PROJECT NAME
+              PROJECT NAME *
               <input
                 className={styles.control}
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                placeholder="Optional"
+                required
               />
             </label>
 
@@ -414,6 +691,74 @@ function SparesMasterListPage({ adminMode = false, closePath } = {}) {
           </div>
         </form>
       </div>
+
+      {/* Items Table with Filters */}
+      <div className={styles.card} style={{ marginTop: 16 }}>
+        <div className={styles.pageTitle} style={{ marginBottom: 12 }}>ALL ITEMS ({filteredItems.length})</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>SL</th>
+                <th>
+                  <div className={styles.reportTh}>
+                    <span>PROJECT NAME</span>
+                    <FilterIconBtn colId="project_name" hook={masterColFilter} />
+                  </div>
+                </th>
+                <th>
+                  <div className={styles.reportTh}>
+                    <span>ITEM NAME</span>
+                    <FilterIconBtn colId="item_name" hook={masterColFilter} />
+                  </div>
+                </th>
+                <th>
+                  <div className={styles.reportTh}>
+                    <span>PART NO</span>
+                    <FilterIconBtn colId="part_no" hook={masterColFilter} />
+                  </div>
+                </th>
+                <th>
+                  <div className={styles.reportTh}>
+                    <span>STORE</span>
+                    <FilterIconBtn colId="item_loc" hook={masterColFilter} />
+                  </div>
+                </th>
+                <th>QTY</th>
+                {adminMode && <th>ACTION</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedItems.length === 0 ? (
+                <tr><td colSpan={adminMode ? 7 : 6} style={{ textAlign: 'center', padding: 12 }}>No items found</td></tr>
+              ) : (
+                sortedItems.map((item, idx) => (
+                  <tr key={item.part_no || idx} style={!(item.project_name || '').trim() ? { background: '#fff3cd' } : {}}>
+                    <td>{idx + 1}</td>
+                    <td>{(item.project_name || '').trim() || <span style={{ color: '#999', fontStyle: 'italic' }}>No Project</span>}</td>
+                    <td>{item.item_name || '-'}</td>
+                    <td>{item.part_no}</td>
+                    <td>{item.item_loc || '-'}</td>
+                    <td>{item.qty ?? 0}</td>
+                    {adminMode && (
+                      <td>
+                        <button
+                          className={`${styles.btn} ${styles.btnDanger}`}
+                          style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                          onClick={() => handleDelete(item.part_no)}
+                        >
+                          DELETE
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+          <ColumnFilterPopover hook={masterColFilter} columns={masterColumns} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -436,6 +781,10 @@ function SparesInPage() {
   const [rackNo, setRackNo] = useState("");
   const [recievedFrom, setRecievedFrom] = useState("");
 
+  // Cascading filters
+  const [projectFilter, setProjectFilter] = useState("");
+  const [itemNameFilter, setItemNameFilter] = useState("");
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -455,6 +804,50 @@ function SparesInPage() {
     }
   };
 
+  // Cascading dropdown options
+  const uniqueProjects = useMemo(() => [...new Set(items.map(i => i.project_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
+  const filteredItemNames = useMemo(() => {
+    const filtered = projectFilter ? items.filter(i => i.project_name === projectFilter) : items;
+    return [...new Set(filtered.map(i => i.item_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, [items, projectFilter]);
+  const filteredPartNos = useMemo(() => {
+    let filtered = items;
+    if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+    if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+    return filtered.map(i => i.part_no);
+  }, [items, projectFilter, itemNameFilter]);
+
+  // Merge partMatches with cascading filter — auto-suggest from master when filters active
+  const displayedPartMatches = useMemo(() => {
+    if (projectFilter || itemNameFilter) {
+      let filtered = items;
+      if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+      if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+      if (partSearch.trim()) {
+        const q = partSearch.trim().toLowerCase();
+        filtered = filtered.filter(i => String(i.part_no).toLowerCase().includes(q));
+      }
+      return filtered.map(i => ({ part_no: i.part_no, item_name: i.item_name }));
+    }
+    if (!partSearch.trim()) return [];
+    return partMatches;
+  }, [items, partMatches, projectFilter, itemNameFilter, partSearch]);
+
+  // Auto-show dropdown when cascading filters produce matches
+  useEffect(() => {
+    if ((projectFilter || itemNameFilter) && displayedPartMatches.length > 0) setShowDropdown(true);
+  }, [displayedPartMatches, projectFilter, itemNameFilter]);
+
+  // Auto-select when exactly one part matches both filters
+  useEffect(() => {
+    if (projectFilter && itemNameFilter && filteredPartNos.length === 1) {
+      const pn = filteredPartNos[0];
+      setPartSearch(pn);
+      setShowDropdown(false);
+      handleSelectPart(pn);
+    }
+  }, [filteredPartNos.length, projectFilter, itemNameFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const clearForm = () => {
     setItemName("");
     setProjectName("");
@@ -470,6 +863,8 @@ function SparesInPage() {
     setRackNo("");
     setItemLoc("");
     setRecievedFrom("");
+    setProjectFilter("");
+    setItemNameFilter("");
   };
 
   const handleSelectPart = async (partNo) => {
@@ -495,6 +890,8 @@ function SparesInPage() {
       setBinNos(normalizeBinNos(item.bin_nos));
       setRackNo(item.rack_no || "");
       setItemLoc(item.item_loc || "");
+      if (item.project_name) setProjectFilter(item.project_name);
+      if (item.item_name) setItemNameFilter(item.item_name);
     }
   };
 
@@ -540,6 +937,7 @@ function SparesInPage() {
 
   return (
     <div className={styles.page}>
+          <SectionNav section="spares" />
           <div className={styles.pageHeader}>
             <div className={styles.pageTitle}>SPARES — ITEM IN</div>
             <button
@@ -553,6 +951,22 @@ function SparesInPage() {
           <div className={styles.card}>
             <form onSubmit={onSubmit} className={styles.form}>
               <div className={styles.formGrid2}>
+                <label className={styles.label}>
+                  PROJECT NAME
+                  <select className={styles.control} value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setItemNameFilter(""); setPartSearch(""); setSelectedPart(""); }}>
+                    <option value="">— All Projects —</option>
+                    {uniqueProjects.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </label>
+
+                <label className={styles.label}>
+                  ITEM NAME
+                  <select className={styles.control} value={itemNameFilter} onChange={(e) => { setItemNameFilter(e.target.value); setPartSearch(""); setSelectedPart(""); }}>
+                    <option value="">— All Items —</option>
+                    {filteredItemNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+
                 <div className={styles.autocompleteWrapper}>
                   <label className={styles.label}>
                     ITEM PART NO
@@ -571,7 +985,7 @@ function SparesInPage() {
                         const q = (partSearch || '').trim();
                         if (!q) return;
                         const exact =
-                          partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                          displayedPartMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
                           items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
                         if (exact) {
                           const p = exact.part_no;
@@ -580,8 +994,8 @@ function SparesInPage() {
                           handleSelectPart(p);
                           return;
                         }
-                        if (partMatches.length === 1) {
-                          const p = partMatches[0].part_no;
+                        if (displayedPartMatches.length === 1) {
+                          const p = displayedPartMatches[0].part_no;
                           setPartSearch(p);
                           setShowDropdown(false);
                           handleSelectPart(p);
@@ -589,9 +1003,9 @@ function SparesInPage() {
                       }}
                     />
 
-                    {showDropdown && partMatches.length > 0 && (
+                    {showDropdown && displayedPartMatches.length > 0 && (
                     <div className={styles.dropdown}>
-                      {partMatches.map((i) => (
+                      {displayedPartMatches.map((i) => (
                       <div
                         key={i.part_no}
                         className={styles.dropdownItem}
@@ -726,6 +1140,10 @@ function SparesOutPage() {
   const [rackNo, setRackNo] = useState("");
   const [itemLoc, setItemLoc] = useState("");
 
+  // Cascading filters
+  const [projectFilter, setProjectFilter] = useState("");
+  const [itemNameFilter, setItemNameFilter] = useState("");
+
   const navigate = useNavigate();
 
   // Load part numbers
@@ -746,6 +1164,46 @@ function SparesOutPage() {
     }
   };
 
+  // Cascading dropdown options
+  const uniqueProjects = useMemo(() => [...new Set(items.map(i => i.project_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
+  const filteredItemNames = useMemo(() => {
+    const filtered = projectFilter ? items.filter(i => i.project_name === projectFilter) : items;
+    return [...new Set(filtered.map(i => i.item_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, [items, projectFilter]);
+  const filteredPartNos = useMemo(() => {
+    let filtered = items;
+    if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+    if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+    return filtered.map(i => i.part_no);
+  }, [items, projectFilter, itemNameFilter]);
+  const displayedPartMatches = useMemo(() => {
+    if (projectFilter || itemNameFilter) {
+      let filtered = items;
+      if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+      if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+      if (partSearch.trim()) {
+        const q = partSearch.trim().toLowerCase();
+        filtered = filtered.filter(i => String(i.part_no).toLowerCase().includes(q));
+      }
+      return filtered.map(i => ({ part_no: i.part_no, item_name: i.item_name }));
+    }
+    if (!partSearch.trim()) return [];
+    return partMatches;
+  }, [items, partMatches, projectFilter, itemNameFilter, partSearch]);
+
+  useEffect(() => {
+    if ((projectFilter || itemNameFilter) && displayedPartMatches.length > 0) setShowDropdown(true);
+  }, [displayedPartMatches, projectFilter, itemNameFilter]);
+
+  useEffect(() => {
+    if (projectFilter && itemNameFilter && filteredPartNos.length === 1) {
+      const pn = filteredPartNos[0];
+      setPartSearch(pn);
+      setShowDropdown(false);
+      handleSelectPart(pn);
+    }
+  }, [filteredPartNos.length, projectFilter, itemNameFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const clearForm = () => {
     setItemName("");
     setProjectName("");
@@ -761,6 +1219,8 @@ function SparesOutPage() {
     setBinNos([]);
     setRackNo("");
     setItemLoc("");
+    setProjectFilter("");
+    setItemNameFilter("");
   };
 
   // Auto-fill name + qty
@@ -787,6 +1247,8 @@ function SparesOutPage() {
       setBinNos(normalizeBinNos(item.bin_nos));
       setRackNo(item.rack_no || "");
       setItemLoc(item.item_loc || "");
+      if (item.project_name) setProjectFilter(item.project_name);
+      if (item.item_name) setItemNameFilter(item.item_name);
     }
   };
 
@@ -834,6 +1296,7 @@ function SparesOutPage() {
 
   return (
     <div className={styles.page}>
+          <SectionNav section="spares" />
           <div className={styles.pageHeader}>
             <div className={styles.pageTitle}>SPARES — ITEM OUT</div>
 
@@ -848,6 +1311,23 @@ function SparesOutPage() {
           <div className={styles.card}>
             <form onSubmit={onSubmit} className={styles.form}>
               <div className={styles.formGrid2}>
+
+                {/* Cascading Project + Item Name */}
+                <label className={styles.label}>
+                  PROJECT NAME
+                  <select className={styles.control} value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setItemNameFilter(""); setPartSearch(""); setSelectedPart(""); }}>
+                    <option value="">— All Projects —</option>
+                    {uniqueProjects.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </label>
+
+                <label className={styles.label}>
+                  ITEM NAME
+                  <select className={styles.control} value={itemNameFilter} onChange={(e) => { setItemNameFilter(e.target.value); setPartSearch(""); setSelectedPart(""); }}>
+                    <option value="">— All Items —</option>
+                    {filteredItemNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
 
                 {/* Part No */}
                 <div className={styles.autocompleteWrapper}>
@@ -868,7 +1348,7 @@ function SparesOutPage() {
                         const q = (partSearch || '').trim();
                         if (!q) return;
                         const exact =
-                          partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                          displayedPartMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
                           items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
                         if (exact) {
                           const p = exact.part_no;
@@ -877,8 +1357,8 @@ function SparesOutPage() {
                           handleSelectPart(p);
                           return;
                         }
-                        if (partMatches.length === 1) {
-                          const p = partMatches[0].part_no;
+                        if (displayedPartMatches.length === 1) {
+                          const p = displayedPartMatches[0].part_no;
                           setPartSearch(p);
                           setShowDropdown(false);
                           handleSelectPart(p);
@@ -886,9 +1366,9 @@ function SparesOutPage() {
                       }}
                     />
 
-                    {showDropdown && partMatches.length > 0 && (
+                    {showDropdown && displayedPartMatches.length > 0 && (
                     <div className={styles.dropdown}>
-                      {partMatches.map((i) => (
+                      {displayedPartMatches.map((i) => (
                       <div
                         key={i.part_no}
                         className={styles.dropdownItem}
@@ -1030,6 +1510,10 @@ function SparesOutReturnablePage() {
   const [rackNo, setRackNo] = useState("");
   const [itemLoc, setItemLoc] = useState("");
 
+  // Cascading filters
+  const [projectFilter, setProjectFilter] = useState("");
+  const [itemNameFilter, setItemNameFilter] = useState("");
+
   const navigate = useNavigate();
 
   const loadMasterList = async () => {
@@ -1057,6 +1541,46 @@ function SparesOutReturnablePage() {
     loadNextServiceRequestNo();
   }, []);
 
+  // Cascading dropdown options
+  const uniqueProjects = useMemo(() => [...new Set(items.map(i => i.project_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
+  const filteredItemNames = useMemo(() => {
+    const filtered = projectFilter ? items.filter(i => i.project_name === projectFilter) : items;
+    return [...new Set(filtered.map(i => i.item_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, [items, projectFilter]);
+  const filteredPartNos = useMemo(() => {
+    let filtered = items;
+    if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+    if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+    return filtered.map(i => i.part_no);
+  }, [items, projectFilter, itemNameFilter]);
+  const displayedPartMatches = useMemo(() => {
+    if (projectFilter || itemNameFilter) {
+      let filtered = items;
+      if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+      if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+      if (partSearch.trim()) {
+        const q = partSearch.trim().toLowerCase();
+        filtered = filtered.filter(i => String(i.part_no).toLowerCase().includes(q));
+      }
+      return filtered.map(i => ({ part_no: i.part_no, item_name: i.item_name }));
+    }
+    if (!partSearch.trim()) return [];
+    return partMatches;
+  }, [items, partMatches, projectFilter, itemNameFilter, partSearch]);
+
+  useEffect(() => {
+    if ((projectFilter || itemNameFilter) && displayedPartMatches.length > 0) setShowDropdown(true);
+  }, [displayedPartMatches, projectFilter, itemNameFilter]);
+
+  useEffect(() => {
+    if (projectFilter && itemNameFilter && filteredPartNos.length === 1) {
+      const pn = filteredPartNos[0];
+      setPartSearch(pn);
+      setShowDropdown(false);
+      handleSelectPart(pn);
+    }
+  }, [filteredPartNos.length, projectFilter, itemNameFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const clearForm = () => {
     setSelectedPart("");
     setPartSearch("");
@@ -1074,6 +1598,8 @@ function SparesOutReturnablePage() {
     setReceivedByTs("");
     setRemarks("");
     setStatus("");
+    setProjectFilter("");
+    setItemNameFilter("");
   };
 
   const handleSelectPart = async (partNo) => {
@@ -1099,6 +1625,8 @@ function SparesOutReturnablePage() {
       setBinNos(normalizeBinNos(item.bin_nos));
       setRackNo(item.rack_no || "");
       setItemLoc(item.item_loc || "");
+      if (item.project_name) setProjectFilter(item.project_name);
+      if (item.item_name) setItemNameFilter(item.item_name);
     }
   };
 
@@ -1175,6 +1703,7 @@ function SparesOutReturnablePage() {
 
   return (
     <div className={styles.page}>
+      <SectionNav section="spares" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>SPARES — OUT RETURNABLE</div>
         <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate("/user/spares")}>BACK</button>
@@ -1189,6 +1718,20 @@ function SparesOutReturnablePage() {
 
             <label className={styles.label}>DATE
               <input className={styles.control} type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            </label>
+
+            <label className={styles.label}>PROJECT NAME
+              <select className={styles.control} value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setItemNameFilter(""); setPartSearch(""); setSelectedPart(""); }}>
+                <option value="">— All Projects —</option>
+                {uniqueProjects.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </label>
+
+            <label className={styles.label}>ITEM NAME (FILTER)
+              <select className={styles.control} value={itemNameFilter} onChange={(e) => { setItemNameFilter(e.target.value); setPartSearch(""); setSelectedPart(""); }}>
+                <option value="">— All Items —</option>
+                {filteredItemNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
             </label>
 
             <div className={styles.autocompleteWrapper}>
@@ -1208,7 +1751,7 @@ function SparesOutReturnablePage() {
                     const q = (partSearch || '').trim();
                     if (!q) return;
                     const exact =
-                      partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                      displayedPartMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
                       items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
                     if (exact) {
                       const p = exact.part_no;
@@ -1219,9 +1762,9 @@ function SparesOutReturnablePage() {
                   }}
                   required
                 />
-                {showDropdown && partMatches.length > 0 && (
+                {showDropdown && displayedPartMatches.length > 0 && (
                   <div className={styles.dropdown}>
-                    {partMatches.map((i) => (
+                    {displayedPartMatches.map((i) => (
                       <div
                         key={i.part_no}
                         className={styles.dropdownItem}
@@ -1285,7 +1828,7 @@ function SparesOutReturnablePage() {
               <input className={styles.control} value={receivedByTs} onChange={(e) => setReceivedByTs(e.target.value)} required />
             </label>
 
-            <label className={styles.label}>REMARKS
+            <label className={styles.label}>REQUEST DETAILS
               <input className={styles.control} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </label>
           </div>
@@ -1412,6 +1955,7 @@ function SparesInReturnedPage() {
 
   return (
     <div className={styles.page}>
+      <SectionNav section="spares" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>SPARES — IN RETURNED</div>
         <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/user/spares')}>BACK</button>
@@ -1492,6 +2036,10 @@ function ViewItemPage() {
   const partMatches = usePartSuggestList(partSearch);
   const [showDropdown, setShowDropdown] = useState(false);
 
+  // Cascading filters
+  const [projectFilter, setProjectFilter] = useState("");
+  const [itemNameFilter, setItemNameFilter] = useState("");
+
   const navigate = useNavigate();
   
   const formatDateTime = (isoDate) => {
@@ -1524,6 +2072,46 @@ function ViewItemPage() {
       console.error(err);
     }
   };
+
+  // Cascading dropdown options
+  const uniqueProjects = useMemo(() => [...new Set(items.map(i => i.project_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
+  const filteredItemNames = useMemo(() => {
+    const filtered = projectFilter ? items.filter(i => i.project_name === projectFilter) : items;
+    return [...new Set(filtered.map(i => i.item_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, [items, projectFilter]);
+  const filteredPartNos = useMemo(() => {
+    let filtered = items;
+    if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+    if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+    return filtered.map(i => i.part_no);
+  }, [items, projectFilter, itemNameFilter]);
+  const displayedPartMatches = useMemo(() => {
+    if (projectFilter || itemNameFilter) {
+      let filtered = items;
+      if (projectFilter) filtered = filtered.filter(i => i.project_name === projectFilter);
+      if (itemNameFilter) filtered = filtered.filter(i => i.item_name === itemNameFilter);
+      if (partSearch.trim()) {
+        const q = partSearch.trim().toLowerCase();
+        filtered = filtered.filter(i => String(i.part_no).toLowerCase().includes(q));
+      }
+      return filtered.map(i => ({ part_no: i.part_no, item_name: i.item_name }));
+    }
+    if (!partSearch.trim()) return [];
+    return partMatches;
+  }, [items, partMatches, projectFilter, itemNameFilter, partSearch]);
+
+  useEffect(() => {
+    if ((projectFilter || itemNameFilter) && displayedPartMatches.length > 0) setShowDropdown(true);
+  }, [displayedPartMatches, projectFilter, itemNameFilter]);
+
+  useEffect(() => {
+    if (projectFilter && itemNameFilter && filteredPartNos.length === 1) {
+      const pn = filteredPartNos[0];
+      setPartSearch(pn);
+      setShowDropdown(false);
+      handleSelectPart(pn);
+    }
+  }, [filteredPartNos.length, projectFilter, itemNameFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filterAudit = async () => {
     const res = await fetch(
@@ -1560,6 +2148,8 @@ function ViewItemPage() {
       setNoOfBins(detail.no_of_bins || 0);
       setBinNos(normalizeBinNos(detail.bin_nos));
       setQtyAvailable(detail.qty || 0);
+      if (detail.project_name) setProjectFilter(detail.project_name);
+      if (detail.item_name) setItemNameFilter(detail.item_name);
 
       // Audit list
       const auditRes = await fetch(
@@ -1575,6 +2165,7 @@ function ViewItemPage() {
 
   return (
     <div className={styles.page}>
+          <SectionNav section="spares" />
           {/* Page Title */}
           <div className={styles.pageHeader}>
             <div className={styles.pageTitle}>VIEW ITEM</div>
@@ -1590,6 +2181,22 @@ function ViewItemPage() {
             {/* FORM SECTION */}
             <div className={styles.form}>
               <div className={styles.formGrid2}>
+                <label className={styles.label}>
+                  PROJECT NAME
+                  <select className={styles.control} value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setItemNameFilter(""); setPartSearch(""); setSelectedPart(""); }}>
+                    <option value="">— All Projects —</option>
+                    {uniqueProjects.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </label>
+
+                <label className={styles.label}>
+                  ITEM NAME (FILTER)
+                  <select className={styles.control} value={itemNameFilter} onChange={(e) => { setItemNameFilter(e.target.value); setPartSearch(""); setSelectedPart(""); }}>
+                    <option value="">— All Items —</option>
+                    {filteredItemNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+
                 <div className={styles.autocompleteWrapper}>
                   <label className={styles.label}>
                     ITEM PART NO
@@ -1608,7 +2215,7 @@ function ViewItemPage() {
                         const q = (partSearch || '').trim();
                         if (!q) return;
                         const exact =
-                          partMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
+                          displayedPartMatches.find((m) => String(m.part_no).toLowerCase() === q.toLowerCase()) ||
                           items.find((i) => String(i.part_no).toLowerCase() === q.toLowerCase());
                         if (exact) {
                           const p = exact.part_no;
@@ -1617,8 +2224,8 @@ function ViewItemPage() {
                           handleSelectPart(p);
                           return;
                         }
-                        if (partMatches.length === 1) {
-                          const p = partMatches[0].part_no;
+                        if (displayedPartMatches.length === 1) {
+                          const p = displayedPartMatches[0].part_no;
                           setPartSearch(p);
                           setShowDropdown(false);
                           handleSelectPart(p);
@@ -1626,9 +2233,9 @@ function ViewItemPage() {
                       }}
                     />
 
-                    {showDropdown && partMatches.length > 0 && (
+                    {showDropdown && displayedPartMatches.length > 0 && (
                     <div className={styles.dropdown}>
-                      {partMatches.map((i) => (
+                      {displayedPartMatches.map((i) => (
                       <div
                         key={i.part_no}
                         className={styles.dropdownItem}
@@ -1803,27 +2410,38 @@ function StockCheckPage() {
     window.open(`${apiBase()}/spares/stock`, "_blank");
   };
 
-  const sortedItems = [...items].sort((a, b) => {
-    const parse = (val) => {
-      const str = String(val).trim();
-      const match = str.match(/^([a-zA-Z\-]*)(\d+)/);
-      return {
-        prefix: match ? match[1] : str,
-        number: match ? parseInt(match[2], 10) : 0,
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const parse = (val) => {
+        const str = String(val).trim();
+        const match = str.match(/^([a-zA-Z\-]*)(\d+)/);
+        return {
+          prefix: match ? match[1] : str,
+          number: match ? parseInt(match[2], 10) : 0,
+        };
       };
-    };
+      const A = parse(a.part_no);
+      const B = parse(b.part_no);
+      if (A.prefix !== B.prefix) return A.prefix.localeCompare(B.prefix);
+      return A.number - B.number;
+    });
+  }, [items]);
 
-    const A = parse(a.part_no);
-    const B = parse(b.part_no);
+  // Column definitions for the multi-select filter
+  const stockColumns = useMemo(() => [
+    { id: 'part_no', label: 'Part No', accessor: r => r.part_no ?? '' },
+    { id: 'item_name', label: 'Item Name', accessor: r => r.item_name ?? '' },
+    { id: 'project_name', label: 'Project Name', accessor: r => (r.project_name || '').trim() || '' },
+    { id: 'item_loc', label: 'Store Name', accessor: r => r.item_loc ?? '' },
+    { id: 'rack_no', label: 'Rack No', accessor: r => r.rack_no ?? '' },
+  ], []);
 
-    if (A.prefix !== B.prefix) {
-    return A.prefix.localeCompare(B.prefix);
-    }
-    return A.number - B.number;
-  });
+  const colFilter = useColumnFilters(sortedItems, stockColumns);
+  const filteredItems = colFilter.visibleRows;
 
   return (
     <div className={styles.page}>
+          <SectionNav section="spares" />
           {/* Header */}
           <div className={styles.pageHeader}>
             <div className={styles.pageTitle}>STOCK CHECK</div>
@@ -1849,16 +2467,41 @@ function StockCheckPage() {
 
           {/* TABLE */}
           {showTable && (
-            <div className={styles.card} style={{ marginTop: "20px" }}>
+            <div className={styles.card} style={{ marginTop: "20px", overflowX: 'auto' }}>
               <table className={styles.table}>
                 <thead>
                   <tr>
                     <th>Sl No</th>
-                    <th>Part No</th>
-                    <th>Item Name</th>
-                    <th>Project Name</th>
-                    <th>Store Name</th>
-                    <th>Rack No</th>
+                    <th>
+                      <div className={styles.reportTh}>
+                        <span>Part No</span>
+                        <FilterIconBtn colId="part_no" hook={colFilter} />
+                      </div>
+                    </th>
+                    <th>
+                      <div className={styles.reportTh}>
+                        <span>Item Name</span>
+                        <FilterIconBtn colId="item_name" hook={colFilter} />
+                      </div>
+                    </th>
+                    <th>
+                      <div className={styles.reportTh}>
+                        <span>Project Name</span>
+                        <FilterIconBtn colId="project_name" hook={colFilter} />
+                      </div>
+                    </th>
+                    <th>
+                      <div className={styles.reportTh}>
+                        <span>Store Name</span>
+                        <FilterIconBtn colId="item_loc" hook={colFilter} />
+                      </div>
+                    </th>
+                    <th>
+                      <div className={styles.reportTh}>
+                        <span>Rack No</span>
+                        <FilterIconBtn colId="rack_no" hook={colFilter} />
+                      </div>
+                    </th>
                     <th>No of Bins</th>
                     <th>Bin No</th>
                     <th>Qty</th>
@@ -1866,12 +2509,12 @@ function StockCheckPage() {
                 </thead>
 
                 <tbody>
-                  {items.length === 0 ? (
+                  {filteredItems.length === 0 ? (
                     <tr>
                       <td colSpan="9" style={{ textAlign: "center" }}>No items</td>
                     </tr>
                   ) : (
-                    sortedItems.map((item, index) => (
+                    filteredItems.map((item, index) => (
                       <tr key={index}>
                         <td>{index + 1}</td>
                         <td>{item.part_no}</td>
@@ -1887,6 +2530,7 @@ function StockCheckPage() {
                   )}
                 </tbody>
               </table>
+              <ColumnFilterPopover hook={colFilter} columns={stockColumns} />
             </div>
           )}
     </div>

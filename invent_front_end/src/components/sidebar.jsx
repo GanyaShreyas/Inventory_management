@@ -11,11 +11,13 @@ function Sidebar() {
     { to: '/admin/manage-stores', label: 'MANAGE STORES' },
     { to: '/admin/spares-master-list', label: 'SPARES MASTER' },
     { to: '/admin/add-user', label: 'ADD USER' },
+    { to: '/admin/list-users', label: 'LIST USERS' },
     { to: '/admin/reset-password', label: 'RESET USER PASSWORD' },
   ] : [
     { to: '/user/dashboard', label: 'COMPLAINTS MANAGEMENT' },
     { to: '/user/spares', label: 'SPARES MANAGEMENT' },
     { to: '/user/obd', label: 'OBD' },
+    { to: '/user/config', label: 'CONFIGURATION MANAGEMENT' },
   ];
 
   return (

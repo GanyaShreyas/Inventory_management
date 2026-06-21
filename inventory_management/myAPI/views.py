@@ -35,6 +35,7 @@ spares_returnable_requests_col = db["spares_returnable_requests"]
 spares_audit = db["spares_audit"]
 spares_stores_col = db["spares_stores"]  # { "name": str, ... }
 obd_collection = db["obd_records"]
+config_details_col = db["configuration_details"]
 
 # Admin Projects collection
 admin_projects_collection = db["admin_projects"]
@@ -488,6 +489,104 @@ def admin_add_user(request):
         error_response = {"error": str(e)}
         log_api_response("admin_add_user", request.method, getattr(request, 'body', None), {**error_response, "stack_trace": stack_trace})
         return JsonResponse(error_response, status=500)
+
+
+def admin_list_users(request):
+    """Admin-only: list all users (excluding password hashes)."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        docs = list(users_collection.find({}, {"password_hash": 0}))
+        users_list = []
+        for d in docs:
+            users_list.append({
+                "id": str(d.get("_id")),
+                "name": d.get("name", ""),
+                "username": d.get("username", ""),
+                "role": d.get("role", ""),
+                "designation": d.get("designation", ""),
+                "mobile": d.get("mobile", ""),
+                "created_at": str(d.get("created_at", "")),
+            })
+        return JsonResponse({"users": users_list})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_edit_user(request):
+    """Admin-only: edit user details (name, designation, mobile, store)."""
+    if request.method != "PUT":
+        return JsonResponse({"error": "Only PUT allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or b"{}")
+        username = (body.get("username") or "").strip().lower()
+        if not username:
+            return JsonResponse({"error": "username is required"}, status=400)
+
+        target = users_collection.find_one({"username": username})
+        if not target:
+            return JsonResponse({"error": "User not found"}, status=404)
+
+        update_fields = {}
+        if "name" in body:
+            update_fields["name"] = (body["name"] or "").strip()
+        if "designation" in body:
+            update_fields["designation"] = (body["designation"] or "").strip()
+        if "mobile" in body:
+            update_fields["mobile"] = (body["mobile"] or "").strip()
+
+        if not update_fields:
+            return JsonResponse({"error": "No fields to update"}, status=400)
+
+        users_collection.update_one({"username": username}, {"$set": update_fields})
+        return JsonResponse({"message": f"User '{username}' updated successfully"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_delete_user(request):
+    """Admin-only: delete a user by username."""
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Only DELETE allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or b"{}")
+        username = (body.get("username") or "").strip().lower()
+
+        if not username:
+            return JsonResponse({"error": "username is required"}, status=400)
+
+        # Prevent admin from deleting themselves
+        if username == user.get("username"):
+            return JsonResponse({"error": "Cannot delete your own account"}, status=400)
+
+        target = users_collection.find_one({"username": username})
+        if not target:
+            return JsonResponse({"error": "User not found"}, status=404)
+
+        users_collection.delete_one({"username": username})
+        # Also remove their sessions
+        sessions_collection.delete_many({"user_id": target.get("_id")})
+
+        return JsonResponse({"message": f"User '{username}' deleted successfully"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 @csrf_exempt
@@ -1155,12 +1254,12 @@ def _build_search_query(params):
         query["passNo"] = value
     elif search_type == "serialNumber" and value:
         if serialProjectName:
-            query["projectName"] = {"$regex": serialProjectName, "$options": "i"}    
-        query["items.serialNumber"] = {"$regex": value.upper(), "$options": "i"}
+            query["projectName"] = {"$regex": re.escape(serialProjectName), "$options": "i"}    
+        query["items.serialNumber"] = {"$regex": re.escape(value.upper()), "$options": "i"}
     elif search_type == "ItemPartNo" and value:
         query["items.partNumber"] = value
     elif search_type == "ProjectName" and value:
-        query["projectName"] = {"$regex": value, "$options": "i"}
+        query["projectName"] = value
         if part_no_filter:
             # Optional additional filter when searching by Project Name
             query["items.partNumber"] = part_no_filter
@@ -1597,7 +1696,10 @@ def search_download(request):
                     "updatedBy": updatedBy,
                 }
 
-                writer.writerow([value_map.get(cid, "") for cid in column_ids])
+                def _csv_safe(v):
+                    s = str(v) if v is not None else ""
+                    return s.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+                writer.writerow([_csv_safe(value_map.get(cid, "")) for cid in column_ids])
                 serial_no += 1
 
         csv_content = output.getvalue()
@@ -1867,6 +1969,82 @@ def search_download_form(request):
     except Exception as e:
         stack_trace = traceback.format_exc()
         return JsonResponse({"error": str(e), "stack": stack_trace}, status=500)
+
+
+def search_download_acknowledgement(request):
+    """Download acknowledgement form using template with pass no details + user metadata."""
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    user, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        pass_no = (request.GET.get("passNo") or "").strip()
+        if not pass_no:
+            return JsonResponse({"error": "passNo is required"}, status=400)
+
+        doc = collection.find_one({"passNo": pass_no})
+        if not doc:
+            return JsonResponse({"error": "Pass number not found"}, status=404)
+
+        # Fetch user metadata (name, designation, mobile) from the logged-in user's record
+        user_doc = users_collection.find_one({"username": user.get("username")}, {"password_hash": 0})
+        user_name = user_doc.get("name", "") if user_doc else ""
+        user_designation = user_doc.get("designation", "") if user_doc else ""
+        user_mobile = user_doc.get("mobile", "") if user_doc else ""
+
+        # Load template
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        template_path = os.path.join(BASE_DIR, "static", "templates", "Acknowledgement_Receipt_Master.xlsx")
+        wb = load_workbook(template_path)
+        ws = wb.active
+
+        # Unmerge all merged cells so we can write freely, then re-merge after
+        merged_ranges = list(ws.merged_cells.ranges)
+        for merge_range in merged_ranges:
+            ws.unmerge_cells(str(merge_range))
+
+        customer = doc.get("customer", {})
+
+        # Fill cells per template layout
+        ws["D9"] = doc.get("passNo", "")
+        ws["D10"] = customer.get("name", "")
+        ws["D11"] = customer.get("unitAddress", "")
+        raw_date = doc.get("dateIn", "")
+        try:
+            ws["M9"] = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%d-%m-%Y") if raw_date else ""
+        except (ValueError, TypeError):
+            ws["M9"] = raw_date
+        ws["M10"] = customer.get("phone", "")
+        ws["M11"] = customer.get("location", "")
+        ws["K30"] = user_name
+        ws["K32"] = user_designation
+        ws["K34"] = user_mobile
+
+        # Justify alignment for filled cells
+        justify_align = Alignment(horizontal="justify", vertical="center", wrap_text=True)
+        for cell_ref in ["D9", "D10", "D11", "M9", "M10", "M11", "K30", "K32", "K34"]:
+            ws[cell_ref].alignment = justify_align
+
+        # Re-merge cells
+        for merge_range in merged_ranges:
+            ws.merge_cells(str(merge_range))
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        filename = f"Acknowledgement_{pass_no}.xlsx"
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
     
 @csrf_exempt
 def search_suggestions(request):
@@ -1890,11 +2068,11 @@ def search_suggestions(request):
 
         suggestions = set()
         if search_type == "passNo":
-            docs = collection.find({"passNo": {"$regex": f"^{value}", "$options": "i"}}, {"_id": 0, "passNo": 1}).limit(10)
+            docs = collection.find({"passNo": {"$regex": f"^{re.escape(value)}", "$options": "i"}}, {"_id": 0, "passNo": 1}).limit(10)
             for doc in docs:
                 suggestions.add(doc.get("passNo"))
         elif search_type == "ItemPartNo":
-            docs = collection.find({"items.partNumber": {"$regex": f"^{value}", "$options": "i"}}, {"_id": 0, "items.partNumber": 1}).limit(50)
+            docs = collection.find({"items.partNumber": {"$regex": f"^{re.escape(value)}", "$options": "i"}}, {"_id": 0, "items.partNumber": 1}).limit(50)
             for doc in docs:
                 for item in doc.get("items", []):
                     part_no = item.get("partNumber")
@@ -1905,7 +2083,7 @@ def search_suggestions(request):
                 if len(suggestions) >= 10:
                     break
         elif search_type == "ProjectName":
-            docs = admin_projects_collection.find({"projectName": {"$regex": f"^{value}", "$options": "i"}}, {"_id": 0, "projectName": 1}).limit(10)
+            docs = admin_projects_collection.find({"projectName": {"$regex": f"^{re.escape(value)}", "$options": "i"}}, {"_id": 0, "projectName": 1}).limit(10)
             for doc in docs:
                 suggestions.add(doc.get("projectName"))
         elif search_type == "PhoneNumber":
@@ -2103,6 +2281,47 @@ def spares_master_update(request):
         spares_coll.update_one({"part_no": part_no}, {"$set": update_fields})
 
         return JsonResponse({"message": "Item updated", "part_no": part_no}, status=200)
+
+    except Exception as e:
+        stack = traceback.format_exc()
+        return JsonResponse({"error": str(e), "stack_trace": stack}, status=500)
+
+
+@csrf_exempt
+def spares_master_delete(request):
+    """Delete a spares master item and its related audit/history data (admin only)."""
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Only DELETE allowed"}, status=405)
+
+    user, err = require_auth(request, role="admin")
+    if err:
+        return err
+
+    try:
+        body = json.loads(request.body or "{}")
+        part_no = (body.get("part_no") or "").strip()
+        if not part_no:
+            return JsonResponse({"error": "part_no is required"}, status=400)
+
+        spares_coll = db["spares_master"]
+        existing = spares_coll.find_one({"part_no": part_no})
+        if not existing:
+            return JsonResponse({"error": "Part number not found"}, status=404)
+
+        # Delete the master record
+        spares_coll.delete_one({"part_no": part_no})
+        # Delete related audit entries
+        spares_audit.delete_many({"part_no": part_no})
+        # Delete related spares_in entries
+        spares_in_col.delete_many({"part_no": part_no})
+        # Delete related spares_out entries
+        spares_out_col.delete_many({"part_no": part_no})
+        # Delete related returnable entries
+        spares_out_returnable_col.delete_many({"part_no": part_no})
+        spares_in_returned_col.delete_many({"part_no": part_no})
+        spares_returnable_requests_col.delete_many({"part_no": part_no})
+
+        return JsonResponse({"message": "Item and related data deleted", "part_no": part_no})
 
     except Exception as e:
         stack = traceback.format_exc()
@@ -2547,15 +2766,18 @@ def stock_check(request):
                     bin_cell = ", ".join(str(b) for b in bin_nos_val)
                 else:
                     bin_cell = item.get("bin_no", "") or ""
+                def _csv_safe(v):
+                    s = str(v) if v is not None else ""
+                    return s.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
                 writer.writerow([
                     idx + 1,
-                    item.get("part_no", ""),
-                    item.get("item_name", ""),
-                    item.get("project_name", ""),
-                    item.get("item_loc", ""),
-                    item.get("rack_no", ""),
+                    _csv_safe(item.get("part_no", "")),
+                    _csv_safe(item.get("item_name", "")),
+                    _csv_safe(item.get("project_name", "")),
+                    _csv_safe(item.get("item_loc", "")),
+                    _csv_safe(item.get("rack_no", "")),
                     item.get("no_of_bins", 0),
-                    bin_cell,
+                    _csv_safe(bin_cell),
                     item.get("qty", 0)
                 ])
 
@@ -2902,6 +3124,117 @@ def spares_in_returned(request):
             }
         )
     except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# ─────────────── Configuration Management ───────────────
+
+@csrf_exempt
+def config_add(request):
+    """Add or update a configuration detail entry (upsert by combination)"""
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    try:
+        body = json.loads(request.body)
+        project_name = (body.get("project_name") or "").strip()
+        item_type = (body.get("item_type") or "").strip()
+        item_name = (body.get("item_name") or "").strip()
+        part_no = (body.get("part_no") or "").strip()
+        config_details = (body.get("config_details") or "").strip()
+
+        if not project_name or not item_name or not part_no or not config_details:
+            return JsonResponse({"error": "project_name, item_name, part_no, and config_details are required"}, status=400)
+
+        # Check if combination already exists
+        filter_q = {
+            "project_name": project_name,
+            "item_type": item_type,
+            "item_name": item_name,
+            "part_no": part_no,
+        }
+        existing = config_details_col.find_one(filter_q)
+
+        if existing:
+            # Update existing record
+            config_details_col.update_one(filter_q, {"$set": {
+                "config_details": config_details,
+                "updated_by": user.get("username", ""),
+                "updated_at": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+            }})
+            return JsonResponse({"status": "success", "message": "Configuration updated"})
+        else:
+            # Insert new record
+            doc = {
+                "project_name": project_name,
+                "item_type": item_type,
+                "item_name": item_name,
+                "part_no": part_no,
+                "config_details": config_details,
+                "created_by": user.get("username", ""),
+                "created_at": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+            }
+            config_details_col.insert_one(doc)
+            return JsonResponse({"status": "success", "message": "Configuration added"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def config_get(request):
+    """Get a single configuration record by exact combination"""
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+    try:
+        project_name = request.GET.get("project_name", "").strip()
+        item_type = request.GET.get("item_type", "").strip()
+        item_name = request.GET.get("item_name", "").strip()
+        part_no = request.GET.get("part_no", "").strip()
+
+        if not project_name or not item_name or not part_no:
+            return JsonResponse({"error": "project_name, item_name, and part_no are required"}, status=400)
+
+        doc = config_details_col.find_one({
+            "project_name": project_name,
+            "item_type": item_type,
+            "item_name": item_name,
+            "part_no": part_no,
+        }, {"_id": 0})
+
+        if doc:
+            return JsonResponse({"found": True, "record": doc})
+        else:
+            return JsonResponse({"found": False})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def config_list(request):
+    """List configuration details with optional filters"""
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+    try:
+        query = {}
+        project_name = request.GET.get("project_name", "").strip()
+        part_no = request.GET.get("part_no", "").strip()
+        if project_name:
+            query["project_name"] = project_name
+        if part_no:
+            query["part_no"] = re.compile("^" + re.escape(part_no) + "$", re.IGNORECASE)
+
+        docs = list(config_details_col.find(query, {"_id": 0}).sort("created_at", -1))
+        return JsonResponse({"records": docs})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+    except Exception as e:
         print(traceback.format_exc())
         return JsonResponse({"error": str(e)}, status=500)
 
@@ -2924,82 +3257,31 @@ def spares_out_returnable_download_form(request):
         if not doc:
             return JsonResponse({"error": "Service Request not found"}, status=404)
 
-        wb = Workbook()
+            # Load template
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        template_path = os.path.join(BASE_DIR, "static", "templates", "Service_Master_Request_Form.xlsx")
+        wb = load_workbook(template_path)
         ws = wb.active
-        ws.title = "Service Request Form"
 
-        ws.merge_cells("A1:H1")
-        ws["A1"] = "Customer Support Milcom"
-        ws["A1"].font = Font(bold=True, size=16)
-        ws["A1"].alignment = Alignment(horizontal="center")
+        # Fill cells per template layout
+        ws["D8"] = doc.get("serviceRequestNo", "")
+        ws["D10"] = doc.get("project_name", "")
+        ws["D13"] = doc.get("item_name", "")
+        raw_date = doc.get("date", "")
+        try:
+            ws["M8"] = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%d-%m-%Y") if raw_date else ""
+        except (ValueError, TypeError):
+            ws["M8"] = raw_date
+        ws["M13"] = doc.get("part_no", "")
+        ws["D15"] = doc.get("remarks", "")
+        ws["C18"] = doc.get("qty_handed_over", "")
+        ws["F18"] = doc.get("handed_over_by_cs", "")
+        ws["J18"] = doc.get("received_by_ts", "")
 
-        ws.merge_cells("A2:H2")
-        ws["A2"] = "Service Request Form"
-        ws["A2"].font = Font(bold=True, size=12)
-        ws["A2"].alignment = Alignment(horizontal="center")
-
-        fields = [
-            ("Date", doc.get("date", "")),
-            ("Service Request No", doc.get("serviceRequestNo", "")),
-            ("Project Name", doc.get("project_name", "")),
-            ("Part No", doc.get("part_no", "")),
-            ("Item Name", doc.get("item_name", "")),
-            ("Qty Handed Over", doc.get("qty_handed_over", "")),
-            ("Handed Over By (CS)", doc.get("handed_over_by_cs", "")),
-            ("Received By (TS)", doc.get("received_by_ts", "")),
-        ]
-
-        row = 4
-        for k, v in fields:
-            ws[f"A{row}"] = k
-            ws[f"A{row}"].font = Font(bold=True)
-            ws.merge_cells(f"B{row}:H{row}")
-            ws[f"B{row}"] = v
-            row += 1
-
-        row += 1
-        table_headers = [
-            "SL.No.",
-            "Qty Return Date",
-            "Qty Returned",
-            "Handed Over By (TS)",
-            "Received Back By (CS)",
-        ]
-        for idx, header in enumerate(table_headers, start=1):
-            c = ws.cell(row=row, column=idx, value=header)
-            c.font = Font(bold=True)
-            c.alignment = Alignment(horizontal="center", vertical="center")
-
-        thin = Side(style="thin")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        for c in range(1, 6):
-            ws.cell(row=row, column=c).border = border
-
-        row += 1
-        returns = doc.get("returns", []) or []
-        min_rows = max(5, len(returns))
-        for i in range(min_rows):
-            entry = returns[i] if i < len(returns) else {}
-            values = [
-                entry.get("slNo", i + 1 if i < len(returns) else ""),
-                entry.get("qtyReturnDate", ""),
-                entry.get("qtyReturned", ""),
-                entry.get("handedOverByTs", ""),
-                entry.get("receivedBackByCs", ""),
-            ]
-            for col, val in enumerate(values, start=1):
-                cell = ws.cell(row=row + i, column=col, value=val)
-                cell.border = border
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-
-        ws.column_dimensions["A"].width = 12
-        ws.column_dimensions["B"].width = 18
-        ws.column_dimensions["C"].width = 14
-        ws.column_dimensions["D"].width = 24
-        ws.column_dimensions["E"].width = 24
-        ws.column_dimensions["F"].width = 16
-        ws.column_dimensions["G"].width = 16
-        ws.column_dimensions["H"].width = 16
+        # Justify alignment for filled cells
+        justify_align = Alignment(horizontal="justify", vertical="center", wrap_text=True)
+        for cell_ref in ["D8", "D10", "D13", "M8", "M13", "D15", "C18", "F18", "J18"]:
+            ws[cell_ref].alignment = justify_align
 
         output = BytesIO()
         wb.save(output)

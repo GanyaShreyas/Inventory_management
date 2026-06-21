@@ -7,6 +7,9 @@ urlpatterns = [
     path('validate-token', views.validate_token),  # GET /api/validate-token
     path('logout', views.logout),  # POST /api/logout
     path('admin/users', views.admin_add_user),  # POST /api/admin/users
+    path('admin/users/list', views.admin_list_users),  # GET /api/admin/users/list
+    path('admin/users/edit', views.admin_edit_user),  # PUT /api/admin/users/edit
+    path('admin/users/delete', views.admin_delete_user),  # DELETE /api/admin/users/delete
     path('admin/users/reset-password', views.admin_reset_password),  # POST
     path('user/change-password', views.user_change_password),  # POST
 
@@ -22,6 +25,7 @@ urlpatterns = [
     path('search/suggestions', views.search_suggestions),  # GET /api/search/suggestions
     path('search/download_sticker', views.search_download_sticker),
     path('search/download_form', views.search_download_form),
+    path('search/download_acknowledgement', views.search_download_acknowledgement),
 
     # OBD management
     path('obd/out', views.obd_out),  # POST /api/obd/out
@@ -44,6 +48,7 @@ urlpatterns = [
     # spares management
     path("spares/master/add", views.spares_master_add),  # POST — admin only
     path("spares/master/update", views.spares_master_update),  # PUT — admin only
+    path("spares/master/delete", views.spares_master_delete),  # DELETE — admin only
     path("spares/master/search", views.spares_master_search),  # GET ?pattern=
     path("spares/stores", views.spares_stores_list),  # GET — dropdown list
     path("admin/stores/add", views.admin_stores_add),
@@ -61,4 +66,9 @@ urlpatterns = [
     path("spares/audit", views.spares_audit_view), # GET /spares/audit
     path("spares/stock", views.stock_check), # GET /spares/stock
     path("spares/audit/filter", views.spares_audit_filter),  # GET /spares/audit/filter
+
+    # Configuration Management
+    path("config/add", views.config_add),  # POST /api/config/add
+    path("config/get", views.config_get),  # GET /api/config/get
+    path("config/list", views.config_list),  # GET /api/config/list
 ]

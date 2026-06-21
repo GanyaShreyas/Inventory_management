@@ -35,6 +35,11 @@ export default function DashboardChoice() {
               <div className={styles.cardDesc}>MANAGE OBD OUTBOUND RECORDS.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/user/obd">OPEN</Link>
             </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>CONFIGURATION MANAGEMENT</div>
+              <div className={styles.cardDesc}>MANAGE ITEM CONFIGURATION DETAILS.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/user/config">OPEN</Link>
+            </div>
           </div>
         </div>
         <Footer />
