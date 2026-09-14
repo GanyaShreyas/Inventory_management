@@ -44,12 +44,22 @@ const SECTIONS = {
       { to: '/config/view', label: 'VIEW' },
     ],
   },
+  wbs: {
+    label: 'WBS DETAILS',
+    backTo: '/wbs',
+    links: [
+      { to: '/wbs/edit', label: 'EDIT' },
+      { to: '/wbs/view', label: 'VIEW' },
+    ],
+  },
 };
 
 export default function SectionNav({ section }) {
   const loc = useLocation();
   const sec = SECTIONS[section];
   if (!sec) return null;
+  const role = sessionStorage.getItem('role') || localStorage.getItem('role');
+  const links = sec.links.filter((l) => !(section === 'complaints' && l.to === '/edit' && role !== 'admin'));
 
   return (
     <nav className={styles.sectionNav}>
@@ -57,7 +67,7 @@ export default function SectionNav({ section }) {
         &#8592;
       </Link>
       <div className={styles.sectionNavLinks}>
-        {sec.links.map((l) => (
+        {links.map((l) => (
           <Link
             key={l.to}
             to={l.to}

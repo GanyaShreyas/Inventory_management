@@ -15,6 +15,8 @@ import DashboardChoice from './DashboardChoice';
 import { SparesMasterListPage, SparesInPage, SparesOutPage, ViewItemPage, StockCheckPage, SparesOutReturnablePage, SparesInReturnedPage } from './SparesManagement';
 import OBDManagement, { OBDOutPage, OBDStatusPage, UpdateOBDPage } from './OBDManagement';
 import ConfigurationManagement, { ConfigEditPage, ConfigViewPage } from './ConfigurationManagement';
+import WBSDetails, { WBSEditPage, WBSViewPage } from './WBSDetails';
+import FieldComplaintsReport from './FieldComplaintsReport';
 import ManageStores from './components/ManageStores';
 import SectionNav from './components/SectionNav';
 import { Outlet } from "react-router-dom";
@@ -209,6 +211,11 @@ function AdminDashboard() {
               <div className={styles.cardDesc}>Define store names used in Spares master list.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/admin/manage-stores">OPEN</Link>
             </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>ITEM EDIT - COMPLAINTS MANAGEMENT</div>
+              <div className={styles.cardDesc}>Edit/view complaint item records by pass number.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/edit">OPEN</Link>
+            </div>
           </div>
         </div>
         <Footer />
@@ -216,6 +223,19 @@ function AdminDashboard() {
 
     </div>
   )
+}
+
+function AppShell({ children }) {
+  return (
+    <div className={styles.inventoryLayout}>
+      <Sidebar />
+      <div className={styles.inventoryMain}>
+        <Header />
+        {children}
+        <Footer />
+      </div>
+    </div>
+  );
 }
 
 function Dashboard() {
@@ -274,11 +294,6 @@ function Dashboard() {
               <div className={styles.cardTitle}>REPORT</div>
               <div className={styles.cardDesc}>Find records by private pass no, part no, project or date range.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/search">OPEN</Link>
-            </div>
-            <div className={styles.card}>
-              <div className={styles.cardTitle}>EDIT/VIEW</div>
-              <div className={styles.cardDesc}>Edit or delete a record by pass number.</div>
-              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/edit">OPEN</Link>
             </div>
             <div className={styles.card}>
               <div className={styles.cardTitle}>MONGO BACKUP</div>
@@ -700,6 +715,8 @@ function ItemInPage() {
   const [customerUnitAddress, setCustomerUnitAddress] = useState('');
   const [customerLocation, setCustomerLocation] = useState('');
   const [customerPhoneNo, setCustomerPhoneNo] = useState('');
+  const [customerEmailId, setCustomerEmailId] = useState('');
+  const [workOrderNo, setWorkOrderNo] = useState('');
   const [projectName, setProjectName] = useState('');
   const [projectOptions, setProjectOptions] = useState([]);
   
@@ -806,6 +823,8 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
     setCustomerUnitAddress('');
     setCustomerLocation('');
     setCustomerPhoneNo('');
+    setCustomerEmailId('');
+    setWorkOrderNo('');
     setProjectName('');
     setPassNo('');
     clearItemDetails();
@@ -978,6 +997,8 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
         customerUnitAddress,
         customerLocation,
         customerPhoneNo,
+        customerEmailId,
+        workOrderNo,
         projectName,
         passNo,
         items: items.map((row) => {
@@ -1028,6 +1049,8 @@ const fetchPartNoOptions = async (idx, equipmentType, itemName) => {
             <label className={styles.label}>CUSTOMER NAME<input className={styles.control} value={customerName} onChange={(e) => setCustomerName(e.target.value)} required /></label>
             <label className={styles.label}>CUSTOMER UNIT ADDRESS<input className={styles.control} value={customerUnitAddress} onChange={(e) => setCustomerUnitAddress(e.target.value)} /></label>
             <label className={styles.label}>CUSTOMER LOCATION<input className={styles.control} value={customerLocation} onChange={(e) => setCustomerLocation(e.target.value)} /></label>
+            <label className={styles.label}>CUSTOMER E-MAIL ID<input className={styles.control} type="email" value={customerEmailId} onChange={(e) => setCustomerEmailId(e.target.value)} /></label>
+            <label className={styles.label}>WORK ORDER NO.<input className={styles.control} value={workOrderNo} onChange={(e) => setWorkOrderNo(e.target.value)} /></label>
             <label className={styles.label}>
               CUSTOMER PHONE NO
               <input 
@@ -1582,7 +1605,6 @@ function ItemOutPage() {
           else if (value === false) {
             console.log(`Clearing dateOut for item ${idx} since itemOut is now false`);
             updatedItem.dateOut = null;
-            updatedItem.dispatchThrough = '';
           }
           
           return updatedItem;
@@ -1786,11 +1808,10 @@ function ItemOutPage() {
               </thead>
               <tbody>
                 {record.items?.map((it, idx) => {
-                  const rowDisabled = !it.itemRfd;
                   // Disable only if it was ALREADY itemOut=true in the ORIGINAL DB state (before user edits)
                   const itemOutLocked = originalRecord?.items?.[idx]?.itemOut === true;
                   return (
-                    <tr key={idx} className={rowDisabled ? styles.rowDisabled : ''}>
+                    <tr key={idx}>
                       <td style={{ textAlign: 'center' }}>{idx + 1}</td>
                       <td>{it.equipmentType}</td>
                       <td>{it.itemName}</td>
@@ -1808,6 +1829,7 @@ function ItemOutPage() {
                           value={it.dateOut || ''} 
                           onChange={(e) => updateDateOut(idx, e.target.value)}
                           placeholder="SELECT DATE"
+                          disabled={itemOutLocked}
                         />
                         {!it.dateOut && <div className={styles.hintNoDate}>NO DATE SET</div>}
                         {it.itemOut && !it.dateOut && <div className={styles.hintRequiredDate}>⚠️ DATE REQUIRED FOR ITEM OUT</div>}
@@ -1815,9 +1837,8 @@ function ItemOutPage() {
                       <td>
                         <select
                           className={styles.control}
-                          value={itemOutLocked ? '' : (it.dispatchThrough || '')}
+                          value={it.dispatchThrough || ''}
                           onChange={(e) => updateDispatchThrough(idx, e.target.value)}
-                          disabled={itemOutLocked}
                         >
                           <option value="">SELECT</option>
                           <option value="Direct Collection">Direct Collection</option>
@@ -2333,6 +2354,8 @@ function SearchPage() {
     { id: 'customerUnitAddress', label: 'CUSTOMER UNIT ADDRESS' },
     { id: 'customerLocation', label: 'CUSTOMER LOCATION' },
     { id: 'customerPhone', label: 'CUSTOMER PHONE' },
+    { id: 'customerEmail', label: 'CUSTOMER E-MAIL ID' },
+    { id: 'workOrderNo', label: 'WORK ORDER NO.' },
     { id: 'equipmentType', label: 'EQUIPMENT TYPE' },
     { id: 'itemName', label: 'ITEM NAME' },
     { id: 'partNumber', label: 'PART NUMBER' },
@@ -2537,6 +2560,8 @@ function SearchPage() {
           customerUnitAddress: String(doc.customer?.unitAddress || ""),
           customerLocation: String(doc.customer?.location || ""),
           customerPhone: String(formattedPhone || ""),
+          customerEmail: String(doc.customer?.email || ""),
+          workOrderNo: String(doc.workOrderNo || ""),
           yearOfMfg: (() => {
             const y = item.yearOfMfg ?? doc.yearOfMfg;
             return y !== undefined && y !== null && y !== '' ? String(y) : '';
@@ -3693,11 +3718,10 @@ function EditPage() {
 
   return (
     <div className={styles.page} style={{ height: 'calc(100vh - 10px)', overflow: 'auto' }}>
-      <SectionNav section="complaints" />
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>EDIT/VIEW</div>
         <div className={styles.pageActions}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/user/dashboard'); clearForm()}}>BACK</button>
+          <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => {navigate('/admin/admin-dashboard'); clearForm()}}>BACK</button>
         </div>
       </div>
       <div className={styles.card}>
@@ -3859,7 +3883,7 @@ function EditPage() {
                           className={styles.control}
                           value={it.dispatchThrough || ''}
                           onChange={(e) => updateItem(idx, 'dispatchThrough', e.target.value)}
-                          disabled={!isEditing || alreadyOutInDb}
+                          disabled={!isEditing}
                         >
                           <option value="">SELECT</option>
                           <option value="Direct Collection">Direct Collection</option>
@@ -4210,52 +4234,82 @@ function App() {
         } />
         <Route path="/item-in" element={
           <ProtectedRoute requiredRole="user">
-            <ItemInPage />
+            <AppShell><ItemInPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/rfd" element={
           <ProtectedRoute requiredRole="user">
-            <RFDPage />
+            <AppShell><RFDPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/item-out" element={
           <ProtectedRoute requiredRole="user">
-            <ItemOutPage />
+            <AppShell><ItemOutPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/search" element={
           <ProtectedRoute requiredRole="user">
-            <SearchPage />
+            <AppShell><SearchPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/obd/out" element={
           <ProtectedRoute requiredRole="user">
-            <OBDOutPage />
+            <AppShell><OBDOutPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/obd/update" element={
           <ProtectedRoute requiredRole="user">
-            <UpdateOBDPage />
+            <AppShell><UpdateOBDPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/obd/status" element={
           <ProtectedRoute requiredRole="user">
-            <OBDStatusPage />
+            <AppShell><OBDStatusPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/config/edit" element={
           <ProtectedRoute requiredRole="user">
-            <ConfigEditPage />
+            <AppShell><ConfigEditPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/config/view" element={
           <ProtectedRoute requiredRole="user">
-            <ConfigViewPage />
+            <AppShell><ConfigViewPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/edit" element={
+          <ProtectedRoute requiredRole="admin">
+            <AppShell><EditPage /></AppShell>
+          </ProtectedRoute>
+        } />
+        <Route path="/wbs" element={
+          <ProtectedRoute>
+            <WBSDetails />
+          </ProtectedRoute>
+        } />
+        <Route path="/wbs/edit" element={
           <ProtectedRoute requiredRole="user">
-            <EditPage />
+            <WBSEditPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/wbs/view" element={
+          <ProtectedRoute>
+            <WBSViewPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/field-complaints-report" element={
+          <ProtectedRoute requiredRole="user">
+            <FieldComplaintsReport />
+          </ProtectedRoute>
+        } />
+        <Route path="/field-complaints-report/upload" element={
+          <ProtectedRoute requiredRole="user">
+            <FieldComplaintsReport />
+          </ProtectedRoute>
+        } />
+        <Route path="/field-complaints-report/view" element={
+          <ProtectedRoute requiredRole="user">
+            <FieldComplaintsReport />
           </ProtectedRoute>
         } />
         <Route path="/" element={
@@ -4263,7 +4317,7 @@ function App() {
         } />
         <Route path="/print-sticker" element={
           <ProtectedRoute requiredRole="user">
-            <Sticker />
+            <AppShell><Sticker /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/spares/spares-master-list" element={
@@ -4273,32 +4327,32 @@ function App() {
         } />
         <Route path="/spares/spares-in" element={
           <ProtectedRoute requiredRole="user">
-            <SparesInPage />
+            <AppShell><SparesInPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/spares/spares-out" element={
           <ProtectedRoute requiredRole="user">
-            <SparesOutPage />
+            <AppShell><SparesOutPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/spares/spares-out-returnable" element={
           <ProtectedRoute requiredRole="user">
-            <SparesOutReturnablePage />
+            <AppShell><SparesOutReturnablePage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/spares/spares-in-returned" element={
           <ProtectedRoute requiredRole="user">
-            <SparesInReturnedPage />
+            <AppShell><SparesInReturnedPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/spares/view-item" element={
           <ProtectedRoute requiredRole="user">
-            <ViewItemPage />
+            <AppShell><ViewItemPage /></AppShell>
           </ProtectedRoute>
         } />
         <Route path="/spares/stock-check" element={
           <ProtectedRoute requiredRole="user">
-            <StockCheckPage />
+            <AppShell><StockCheckPage /></AppShell>
           </ProtectedRoute>
         } />
       </Routes>

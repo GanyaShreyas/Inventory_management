@@ -36,9 +36,31 @@ spares_audit = db["spares_audit"]
 spares_stores_col = db["spares_stores"]  # { "name": str, ... }
 obd_collection = db["obd_records"]
 config_details_col = db["configuration_details"]
+wbs_details_col = db["wbs_details"]
+field_reports_col = db["field_complaints_reports"]
 
 # Admin Projects collection
 admin_projects_collection = db["admin_projects"]
+
+def _now_kolkata():
+    return datetime.now(ZoneInfo("Asia/Kolkata"))
+
+def _display_name_for_username(username):
+    if not username:
+        return ""
+    user_doc = users_collection.find_one({"username": username}, {"_id": 0, "name": 1, "username": 1})
+    return (user_doc or {}).get("name") or username
+
+def _decorate_user_display_names(doc, created_key="created_by", updated_key="updated_by"):
+    if created_key in doc:
+        doc[created_key] = _display_name_for_username(doc.get(created_key))
+    if updated_key in doc:
+        doc[updated_key] = _display_name_for_username(doc.get(updated_key))
+    if "createdBy" in doc:
+        doc["createdBy"] = _display_name_for_username(doc.get("createdBy"))
+    if "updatedBy" in doc:
+        doc["updatedBy"] = _display_name_for_username(doc.get("updatedBy"))
+    return doc
 # ----------------------
 # Admin Projects Endpoints
 # ----------------------
@@ -684,7 +706,9 @@ def items_in(request):
             "unitAddress": body.get("customerUnitAddress"),
             "location": body.get("customerLocation"),
             "phone": body.get("customerPhoneNo"),
+            "email": body.get("customerEmailId"),
         }
+        work_order_no = (body.get("workOrderNo") or "").strip()
         project_name = body.get("projectName")
         items = body.get("items") or []
         year_raw = body.get("yearOfMfg")  # legacy: applied to items missing yearOfMfg
@@ -740,6 +764,7 @@ def items_in(request):
             "passNo": pass_no,
             "dateIn": date_in,
             "customer": customer,
+            "workOrderNo": work_order_no,
             "projectName": project_name,
             "items": normalized_items,
             "createdBy": user.get("username"),
@@ -958,8 +983,10 @@ def update_item_out(request, pass_no):
                     updated_item["dispatchThrough"] = dispatch_through
             else:
                 updated_item["dateOut"] = None
-                updated_item["dispatchThrough"] = ""
                 print(f"DEBUG: Clearing dateOut for item {i} since itemOut is False")
+
+            if "dispatchThrough" in update_item:
+                updated_item["dispatchThrough"] = (update_item.get("dispatchThrough") or "").strip()
             
             # Handle rectification details
             if "itemRectificationDetails" in update_item:
@@ -1010,6 +1037,9 @@ def edit_record(request, pass_no):
             log_api_response("edit_record", request.method, {"passNo": pass_no}, doc)
             return JsonResponse(doc, safe=False)
         elif request.method == "PUT":
+            user, err = require_auth(request, role="admin")
+            if err:
+                return err
             body = json.loads(request.body or b"{}")
             if body.get("passNo") and body.get("passNo") != pass_no:
                 response = {"error": "passNo cannot be changed"}
@@ -1063,7 +1093,7 @@ def edit_record(request, pass_no):
                         else:
                             item["dispatchThrough"] = dispatch_through
                     else:
-                        item["dispatchThrough"] = ""
+                        item["dispatchThrough"] = dispatch_through
                     if "dateRfd" not in item:
                         item["dateRfd"] = None
                     if "itemRectificationDetails" not in item:
@@ -1093,6 +1123,9 @@ def edit_record(request, pass_no):
             log_api_response("edit_record", request.method, {"passNo": pass_no}, response)
             return JsonResponse(response)
         elif request.method == "DELETE":
+            user, err = require_auth(request, role="admin")
+            if err:
+                return err
             result = collection.delete_one({"passNo": pass_no})
             if result.deleted_count == 0:
                 response = {"error": "Not found"}
@@ -1373,10 +1406,11 @@ def _shape_search_result(doc):
         "projectName": doc.get("projectName"),
         "dateIn": doc.get("dateIn"),
         "customer": doc.get("customer", {}),
+        "workOrderNo": doc.get("workOrderNo", ""),
         "yearOfMfg": doc.get("yearOfMfg"),
         "items": doc.get("items", []),
-        "createdBy": doc.get("createdBy", ""),
-        "updatedBy": doc.get("updatedBy", ""),
+        "createdBy": _display_name_for_username(doc.get("createdBy", "")),
+        "updatedBy": _display_name_for_username(doc.get("updatedBy", "")),
     }
 
 def search(request):
@@ -1490,6 +1524,8 @@ def search_download(request):
             "customerUnitAddress",
             "customerLocation",
             "customerPhone",
+            "customerEmail",
+            "workOrderNo",
             "equipmentType",
             "itemName",
             "partNumber",
@@ -1516,6 +1552,8 @@ def search_download(request):
             "customerUnitAddress": "Customer Unit Address",
             "customerLocation": "Customer Location",
             "customerPhone": "Customer Phone",
+            "customerEmail": "Customer E-mail ID",
+            "workOrderNo": "Work Order No.",
             "yearOfMfg": "Year of MFG",
             "equipmentType": "Equipment Type",
             "itemName": "Item Name",
@@ -1542,6 +1580,8 @@ def search_download(request):
             "customerUnitAddress": "CUSTOMER UNIT ADDRESS",
             "customerLocation": "CUSTOMER LOCATION",
             "customerPhone": "CUSTOMER PHONE",
+            "customerEmail": "CUSTOMER E-MAIL ID",
+            "workOrderNo": "WORK ORDER NO.",
             "yearOfMfg": "YEAR OF MFG",
             "equipmentType": "EQUIPMENT TYPE",
             "itemName": "ITEM NAME",
@@ -1583,8 +1623,8 @@ def search_download(request):
             project_name = doc.get("projectName", "")
             customer = doc.get("customer", {})
             items = doc.get("items", [])
-            createdBy = doc.get("createdBy", "")
-            updatedBy = doc.get("updatedBy", "")
+            createdBy = _display_name_for_username(doc.get("createdBy", ""))
+            updatedBy = _display_name_for_username(doc.get("updatedBy", ""))
             
             search_type = params.get("type")
             status = params.get("status")
@@ -1678,6 +1718,8 @@ def search_download(request):
                     "customerUnitAddress": customer.get("unitAddress", ""),
                     "customerLocation": customer.get("location", ""),
                     "customerPhone": phone,
+                    "customerEmail": customer.get("email", ""),
+                    "workOrderNo": doc.get("workOrderNo", ""),
                     "yearOfMfg": year_mfg_cell,
                     "equipmentType": item.get("equipmentType", ""),
                     "itemName": item.get("itemName", ""),
@@ -3158,11 +3200,13 @@ def config_add(request):
         existing = config_details_col.find_one(filter_q)
 
         if existing:
+            now = _now_kolkata()
             # Update existing record
             config_details_col.update_one(filter_q, {"$set": {
                 "config_details": config_details,
                 "updated_by": user.get("username", ""),
-                "updated_at": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                "updated_at": now.isoformat(),
+                "date_of_update": now.date().isoformat(),
             }})
             return JsonResponse({"status": "success", "message": "Configuration updated"})
         else:
@@ -3206,6 +3250,7 @@ def config_get(request):
         }, {"_id": 0})
 
         if doc:
+            _decorate_user_display_names(doc)
             return JsonResponse({"found": True, "record": doc})
         else:
             return JsonResponse({"found": False})
@@ -3224,18 +3269,304 @@ def config_list(request):
     try:
         query = {}
         project_name = request.GET.get("project_name", "").strip()
+        project_names = [p.strip() for p in request.GET.getlist("project_name") if p.strip()]
+        project_names_csv = [p.strip() for p in request.GET.get("project_names", "").split(",") if p.strip()]
         part_no = request.GET.get("part_no", "").strip()
-        if project_name:
+        selected_projects = project_names or project_names_csv
+        if selected_projects:
+            query["project_name"] = {"$in": selected_projects}
+        elif project_name:
             query["project_name"] = project_name
         if part_no:
             query["part_no"] = re.compile("^" + re.escape(part_no) + "$", re.IGNORECASE)
 
         docs = list(config_details_col.find(query, {"_id": 0}).sort("created_at", -1))
+        docs = [_decorate_user_display_names(d) for d in docs]
         return JsonResponse({"records": docs})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
     except Exception as e:
         print(traceback.format_exc())
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# ---------------------- WBS Details ----------------------
+
+def _serialize_mongo_doc(doc):
+    if not doc:
+        return doc
+    doc["_id"] = str(doc.get("_id"))
+    return doc
+
+def _project_exists(project_name):
+    return bool(admin_projects_collection.find_one({"projectName": project_name}, {"_id": 1}))
+
+@csrf_exempt
+def wbs_save(request):
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    try:
+        body = json.loads(request.body or b"{}")
+        project_name = (body.get("project_name") or "").strip()
+        supply_order_no = (body.get("supply_order_no") or "").strip()
+        if not project_name or not supply_order_no:
+            return JsonResponse({"error": "Project Name and Supply Order No. are required"}, status=400)
+        if not _project_exists(project_name):
+            return JsonResponse({"error": "Project Name does not exist in Admin Projects"}, status=400)
+        for field in ("contract_number", "sale_order"):
+            value = body.get(field)
+            if value not in (None, ""):
+                try:
+                    if int(value) <= 0:
+                        raise ValueError()
+                except Exception:
+                    return JsonResponse({"error": f"{field.replace('_', ' ').title()} must be a positive integer"}, status=400)
+        now = _now_kolkata()
+        allowed = [
+            "project_name", "supply_order_no", "date_of_so", "customer_details",
+            "contract_number", "sale_order", "project_details", "wbs_number",
+            "type", "duration", "date_of_start", "date_of_end", "status_of_wbs",
+            "amount_sanctioned_inr", "remaining_amount_inr", "remarks",
+        ]
+        set_doc = {k: body.get(k, "") for k in allowed}
+        set_doc["status_of_wbs"] = set_doc.get("status_of_wbs") or "Open"
+        for amount_field in ("amount_sanctioned_inr", "remaining_amount_inr"):
+            set_doc[amount_field] = str(set_doc.get(amount_field) or "").replace(",", "").strip()
+        existing = wbs_details_col.find_one({"project_name": project_name, "supply_order_no": supply_order_no})
+        if existing:
+            set_doc.update({"updated_by": user.get("username"), "updated_at": now.isoformat()})
+            wbs_details_col.update_one({"_id": existing["_id"]}, {"$set": set_doc})
+            return JsonResponse({"message": "WBS details updated"})
+        set_doc.update({"created_by": user.get("username"), "created_at": now.isoformat(), "updated_by": user.get("username"), "updated_at": now.isoformat()})
+        wbs_details_col.insert_one(set_doc)
+        return JsonResponse({"message": "WBS details saved"}, status=201)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+def wbs_get(request):
+    user, err = require_auth(request)
+    if err:
+        return err
+    project_name = request.GET.get("project_name", "").strip()
+    supply_order_no = request.GET.get("supply_order_no", "").strip()
+    if not project_name or not supply_order_no:
+        return JsonResponse({"error": "project_name and supply_order_no are required"}, status=400)
+    doc = wbs_details_col.find_one({"project_name": project_name, "supply_order_no": supply_order_no})
+    if not doc:
+        return JsonResponse({"found": False})
+    _decorate_user_display_names(doc)
+    return JsonResponse({"found": True, "record": _serialize_mongo_doc(doc)})
+
+def wbs_supply_orders(request):
+    user, err = require_auth(request)
+    if err:
+        return err
+    project_name = request.GET.get("project_name", "").strip()
+    if not project_name:
+        return JsonResponse({"supply_orders": []})
+    orders = wbs_details_col.distinct("supply_order_no", {"project_name": project_name})
+    return JsonResponse({"supply_orders": sorted([o for o in orders if o], key=lambda s: str(s).casefold())})
+
+def wbs_list(request):
+    user, err = require_auth(request)
+    if err:
+        return err
+    query = {}
+    project_name = request.GET.get("project_name", "").strip()
+    supply_order_no = request.GET.get("supply_order_no", "").strip()
+    if project_name:
+        query["project_name"] = project_name
+    if supply_order_no:
+        query["supply_order_no"] = supply_order_no
+    docs = list(wbs_details_col.find(query).sort("created_at", -1))
+    docs = [_serialize_mongo_doc(_decorate_user_display_names(d)) for d in docs]
+    return JsonResponse({"records": docs})
+
+
+# ---------------------- Field Complaints Report ----------------------
+
+def _normalize_header(value):
+    return re.sub(r"\s+", " ", str(value or "").strip()).upper()
+
+def _field_master_headers():
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for name in ("FIELD_MASTER_REPORT.csv", "field_master_report.csv", "field_master_report.xlsx"):
+        path = os.path.join(base_dir, "static", "templates", name)
+        if os.path.exists(path):
+            if path.lower().endswith(".csv"):
+                with open(path, newline="", encoding="utf-8-sig") as f:
+                    return [h.strip() for h in next(csv.reader(f))]
+            wb = load_workbook(path, read_only=True)
+            return [str(c.value or "").strip() for c in next(wb.active.iter_rows(min_row=1, max_row=1))]
+    raise FileNotFoundError("Field report master template not found")
+
+def _read_upload_rows(uploaded):
+    filename = uploaded.name.lower()
+    if filename.endswith(".csv"):
+        text = uploaded.read().decode("utf-8-sig")
+        reader = csv.DictReader(StringIO(text))
+        return reader.fieldnames or [], list(reader)
+    if filename.endswith(".xlsx"):
+        wb = load_workbook(uploaded, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return [], []
+        headers = [str(h or "").strip() for h in rows[0]]
+        data = []
+        for row in rows[1:]:
+            data.append({headers[i]: row[i] if i < len(row) else "" for i in range(len(headers))})
+        return headers, data
+    raise ValueError("Unsupported file format. Upload .xlsx or .csv only.")
+
+def _valid_date(value):
+    if value in (None, ""):
+        return False
+    if isinstance(value, datetime):
+        return True
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            datetime.strptime(str(value).strip(), fmt)
+            return True
+        except Exception:
+            pass
+    return False
+
+def _field_report_project_value(data):
+    for key in ("PROJECT NAME*", "PROJECT NAME"):
+        value = data.get(key)
+        if str(value or "").strip():
+            return str(value).strip()
+    return ""
+
+def _field_report_query_from_request(request):
+    project = (request.GET.get("project") or request.GET.get("project_name") or "").strip()
+    if not project:
+        return {}, ""
+    if not admin_projects_collection.find_one({"projectName": project}, {"_id": 1}):
+        return None, project
+    return {"$or": [{"data.PROJECT NAME*": project}, {"data.PROJECT NAME": project}]}, project
+
+def _serialize_field_report_doc(doc, headers):
+    data = doc.get("data") or {}
+    row = {h: data.get(h, "") for h in headers}
+    return {
+        "_id": str(doc.get("_id")),
+        "data": row,
+        "created_by": _display_name_for_username(doc.get("created_by")),
+        "created_at": doc.get("created_at", ""),
+        "updated_by": _display_name_for_username(doc.get("updated_by")),
+        "updated_at": doc.get("updated_at", ""),
+        "upload_order": doc.get("upload_order"),
+    }
+
+@csrf_exempt
+def field_reports_bulk_upload(request):
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    try:
+        uploaded = request.FILES.get("file")
+        if not uploaded:
+            return JsonResponse({"error": "File is required"}, status=400)
+        headers, rows = _read_upload_rows(uploaded)
+        master_headers = _field_master_headers()
+        supplied = {_normalize_header(h): h for h in headers}
+        required = {_normalize_header(h): h for h in master_headers}
+        missing = [h for n, h in required.items() if n not in supplied]
+        unexpected = [h for n, h in supplied.items() if n not in required]
+        if missing or unexpected:
+            return JsonResponse({"error": "Header validation failed", "missing": missing, "unexpected": unexpected}, status=400)
+        mandatory_norms = {n for n, h in required.items() if "*" in h}
+        mandatory_norms.update({_normalize_header(v) for v in ("PROJECT NAME", "BEL ENGINEER NAME", "ACTIVITY START DATE", "ACTIVITY END DATE")})
+        project_names = set(admin_projects_collection.distinct("projectName"))
+        errors = []
+        normalized_rows = []
+        for idx, row in enumerate(rows, start=2):
+            clean = {}
+            by_norm = {_normalize_header(k): v for k, v in row.items()}
+            for norm, master in required.items():
+                value = by_norm.get(norm, "")
+                clean[master] = value
+                if norm in mandatory_norms and str(value or "").strip() == "":
+                    errors.append(f"Row {idx}: {master.replace('*', '').strip()} is mandatory.")
+            project = str(by_norm.get(_normalize_header("PROJECT NAME*")) or by_norm.get(_normalize_header("PROJECT NAME")) or "").strip()
+            if project and project not in project_names:
+                errors.append(f'Row {idx}: Project Name "{project}" does not exist in Admin Projects.')
+            for field in ("ACTIVITY START DATE", "ACTIVITY END DATE"):
+                norm_star = _normalize_header(field + "*")
+                value = by_norm.get(norm_star, by_norm.get(_normalize_header(field), ""))
+                if not _valid_date(value):
+                    errors.append(f"Row {idx}: {field} contains an invalid date.")
+            normalized_rows.append(clean)
+        if errors:
+            return JsonResponse({"error": "Validation failed", "details": errors}, status=400)
+        now = _now_kolkata().isoformat()
+        last_doc = field_reports_col.find_one({"upload_order": {"$exists": True}}, sort=[("upload_order", -1)], projection={"upload_order": 1})
+        next_order = int((last_doc or {}).get("upload_order") or field_reports_col.count_documents({}))
+        docs = []
+        for idx, row in enumerate(normalized_rows, start=1):
+            docs.append({
+                "data": row,
+                "created_by": user.get("username"),
+                "created_at": now,
+                "updated_by": user.get("username"),
+                "updated_at": now,
+                "upload_order": next_order + idx,
+                "source_row_number": idx + 1,
+            })
+        if docs:
+            field_reports_col.insert_many(docs)
+        return JsonResponse({"message": "Field reports uploaded", "inserted": len(docs)})
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+def field_reports_list(request):
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+    try:
+        query, project = _field_report_query_from_request(request)
+        if query is None:
+            return JsonResponse({"error": f'Project "{project}" does not exist'}, status=400)
+        headers = [h for h in _field_master_headers() if _normalize_header(h) != "SL NO."]
+        docs = list(field_reports_col.find(query).sort([("upload_order", 1), ("created_at", 1), ("_id", 1)]))
+        records = [_serialize_field_report_doc(d, headers) for d in docs]
+        return JsonResponse({"headers": headers, "records": records})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+def field_reports_download(request):
+    user, err = require_auth(request)
+    if err:
+        return err
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+    try:
+        query, project = _field_report_query_from_request(request)
+        if query is None:
+            return JsonResponse({"error": f'Project "{project}" does not exist'}, status=400)
+        headers = [h for h in _field_master_headers() if _normalize_header(h) != "SL NO."]
+        docs = list(field_reports_col.find(query).sort([("upload_order", 1), ("created_at", 1), ("_id", 1)]))
+        out = StringIO()
+        writer = csv.writer(out)
+        writer.writerow(["SL NO.", *headers])
+        for idx, doc in enumerate(docs, start=1):
+            data = doc.get("data") or {}
+            writer.writerow([idx, *[data.get(h, "") for h in headers]])
+        response = HttpResponse(out.getvalue(), content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="field_complaints_report.csv"'
+        return response
+    except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
 

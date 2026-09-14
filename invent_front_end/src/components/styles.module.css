@@ -272,6 +272,22 @@
   min-height: 100vh;
   transition: box-shadow 0.3s;
 }
+.sidebarCollapsed {
+  min-width: 72px;
+  max-width: 72px;
+  align-items: center;
+}
+.sidebarToggle {
+  margin: 0 8px 12px 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
 .sidebarLogo {
   font-size: 1.1rem;
   font-weight: bold;
@@ -285,6 +301,10 @@
   padding: 0 0 0 16px;
   margin: 0;
   width: 100%;
+}
+.sidebarCollapsed .sidebarNav {
+  padding: 0 8px;
+  text-align: center;
 }
 
 .inventoryMain {

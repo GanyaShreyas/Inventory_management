@@ -71,4 +71,15 @@ urlpatterns = [
     path("config/add", views.config_add),  # POST /api/config/add
     path("config/get", views.config_get),  # GET /api/config/get
     path("config/list", views.config_list),  # GET /api/config/list
+
+    # WBS Details
+    path("wbs/list", views.wbs_list),
+    path("wbs/get", views.wbs_get),
+    path("wbs/save", views.wbs_save),
+    path("wbs/supply-orders", views.wbs_supply_orders),
+
+    # Field Complaints Report
+    path("field-reports/bulk-upload", views.field_reports_bulk_upload),
+    path("field-reports/list", views.field_reports_list),
+    path("field-reports/download", views.field_reports_download),
 ]

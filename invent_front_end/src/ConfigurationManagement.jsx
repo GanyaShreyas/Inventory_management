@@ -237,7 +237,7 @@ export function ConfigEditPage() {
 }
 
 /* ═══════════════ Reusable column filter hook ═══════════════ */
-function useColumnFilters(allRows, columnDefs) {
+export function useColumnFilters(allRows, columnDefs) {
   const [columnFilterAllowedValues, setColumnFilterAllowedValues] = useState({});
   const [columnFilterDraftValues, setColumnFilterDraftValues] = useState({});
   const [openColumnFilterColId, setOpenColumnFilterColId] = useState(null);
@@ -356,7 +356,7 @@ function useColumnFilters(allRows, columnDefs) {
   return { visibleRows, openColumnFilterColId, filterPopoverPos, filterPopoverRef, openColumnFilter, cancelColumnFilter, applyColumnFilter, getUniqueFilterValues, columnFilterDraftValues, setColumnFilterDraftValues, columnFilterAllowedValues };
 }
 
-function ColumnFilterPopover({ hook, columns }) {
+export function ColumnFilterPopover({ hook, columns }) {
   const { openColumnFilterColId, filterPopoverPos, filterPopoverRef, cancelColumnFilter, applyColumnFilter, getUniqueFilterValues, columnFilterDraftValues, setColumnFilterDraftValues } = hook;
   if (!openColumnFilterColId || !filterPopoverPos) return null;
   const colDef = columns.find(c => c.id === openColumnFilterColId);
@@ -406,7 +406,7 @@ function ColumnFilterPopover({ hook, columns }) {
   );
 }
 
-function FilterIconBtn({ colId, hook }) {
+export function FilterIconBtn({ colId, hook }) {
   const { openColumnFilterColId, openColumnFilter, cancelColumnFilter, columnFilterAllowedValues } = hook;
   const hasFilter = Array.isArray(columnFilterAllowedValues?.[colId]);
   return (
@@ -465,11 +465,11 @@ export function ConfigViewPage() {
 
   const handleDownload = () => {
     if (visibleRows.length === 0) { alert('No data to download'); return; }
-    const headers = ['SL', 'Project Name', 'Item Type', 'Item Name', 'Part No', 'Configuration Details', 'Created By'];
+    const headers = ['SL', 'Project Name', 'Item Type', 'Item Name', 'Part No', 'Configuration Details', 'Created By', 'Updated By', 'Date of Update'];
     const csvRows = [headers.join(',')];
     visibleRows.forEach((row, idx) => {
       const escape = (v) => { const s = String(v ?? '').replace(/\r\n|\r|\n/g, ' '); return `"${s.replace(/"/g, '""')}"`; };
-      csvRows.push([idx + 1, escape(row.project_name), escape(row.item_type), escape(row.item_name), escape(row.part_no), escape(row.config_details), escape(row.created_by)].join(','));
+      csvRows.push([idx + 1, escape(row.project_name), escape(row.item_type), escape(row.item_name), escape(row.part_no), escape(row.config_details), escape(row.created_by), escape(row.updated_by), escape(row.date_of_update)].join(','));
     });
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -488,6 +488,8 @@ export function ConfigViewPage() {
     { id: 'part_no', label: 'Part No', accessor: r => r.part_no ?? '' },
     { id: 'config_details', label: 'Configuration Details', accessor: r => r.config_details ?? '' },
     { id: 'created_by', label: 'Created By', accessor: r => r.created_by ?? '' },
+    { id: 'updated_by', label: 'Updated By', accessor: r => r.updated_by ?? '' },
+    { id: 'date_of_update', label: 'Date of Update', accessor: r => r.date_of_update ?? '' },
   ], []);
 
   const colFilter = useColumnFilters(records, viewColumns);
