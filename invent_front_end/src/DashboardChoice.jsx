@@ -40,6 +40,16 @@ export default function DashboardChoice() {
               <div className={styles.cardDesc}>MANAGE ITEM CONFIGURATION DETAILS.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/user/config">OPEN</Link>
             </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>WBS DETAILS</div>
+              <div className={styles.cardDesc}>MANAGE WBS DETAILS.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/wbs">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>FIELD COMPLAINTS REPORT</div>
+              <div className={styles.cardDesc}>UPLOAD AND VIEW FIELD COMPLAINTS REPORTS.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/field-complaints-report">OPEN</Link>
+            </div>
           </div>
         </div>
         <Footer />

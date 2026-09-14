@@ -3296,10 +3296,16 @@ def _serialize_mongo_doc(doc):
     if not doc:
         return doc
     doc["_id"] = str(doc.get("_id"))
+    for key, value in list(doc.items()):
+        if key != "_id" and isinstance(value, str):
+            doc[key] = value.upper()
     return doc
 
 def _project_exists(project_name):
-    return bool(admin_projects_collection.find_one({"projectName": project_name}, {"_id": 1}))
+    return bool(admin_projects_collection.find_one({"projectName": re.compile("^" + re.escape(project_name) + "$", re.IGNORECASE)}, {"_id": 1}))
+
+def _exact_ci(value):
+    return re.compile("^" + re.escape(value) + "$", re.IGNORECASE)
 
 @csrf_exempt
 def wbs_save(request):
@@ -3310,8 +3316,8 @@ def wbs_save(request):
         return JsonResponse({"error": "Only POST allowed"}, status=405)
     try:
         body = json.loads(request.body or b"{}")
-        project_name = (body.get("project_name") or "").strip()
-        supply_order_no = (body.get("supply_order_no") or "").strip()
+        project_name = (body.get("project_name") or "").strip().upper()
+        supply_order_no = (body.get("supply_order_no") or "").strip().upper()
         if not project_name or not supply_order_no:
             return JsonResponse({"error": "Project Name and Supply Order No. are required"}, status=400)
         if not _project_exists(project_name):
@@ -3332,10 +3338,15 @@ def wbs_save(request):
             "amount_sanctioned_inr", "remaining_amount_inr", "remarks",
         ]
         set_doc = {k: body.get(k, "") for k in allowed}
-        set_doc["status_of_wbs"] = set_doc.get("status_of_wbs") or "Open"
+        for key, value in list(set_doc.items()):
+            if isinstance(value, str):
+                set_doc[key] = value.strip().upper()
+        set_doc["project_name"] = project_name
+        set_doc["supply_order_no"] = supply_order_no
+        set_doc["status_of_wbs"] = set_doc.get("status_of_wbs") or "OPEN"
         for amount_field in ("amount_sanctioned_inr", "remaining_amount_inr"):
             set_doc[amount_field] = str(set_doc.get(amount_field) or "").replace(",", "").strip()
-        existing = wbs_details_col.find_one({"project_name": project_name, "supply_order_no": supply_order_no})
+        existing = wbs_details_col.find_one({"project_name": _exact_ci(project_name), "supply_order_no": _exact_ci(supply_order_no)})
         if existing:
             set_doc.update({"updated_by": user.get("username"), "updated_at": now.isoformat()})
             wbs_details_col.update_one({"_id": existing["_id"]}, {"$set": set_doc})
@@ -3350,11 +3361,11 @@ def wbs_get(request):
     user, err = require_auth(request)
     if err:
         return err
-    project_name = request.GET.get("project_name", "").strip()
-    supply_order_no = request.GET.get("supply_order_no", "").strip()
+    project_name = request.GET.get("project_name", "").strip().upper()
+    supply_order_no = request.GET.get("supply_order_no", "").strip().upper()
     if not project_name or not supply_order_no:
         return JsonResponse({"error": "project_name and supply_order_no are required"}, status=400)
-    doc = wbs_details_col.find_one({"project_name": project_name, "supply_order_no": supply_order_no})
+    doc = wbs_details_col.find_one({"project_name": _exact_ci(project_name), "supply_order_no": _exact_ci(supply_order_no)})
     if not doc:
         return JsonResponse({"found": False})
     _decorate_user_display_names(doc)
@@ -3364,10 +3375,10 @@ def wbs_supply_orders(request):
     user, err = require_auth(request)
     if err:
         return err
-    project_name = request.GET.get("project_name", "").strip()
+    project_name = request.GET.get("project_name", "").strip().upper()
     if not project_name:
         return JsonResponse({"supply_orders": []})
-    orders = wbs_details_col.distinct("supply_order_no", {"project_name": project_name})
+    orders = wbs_details_col.distinct("supply_order_no", {"project_name": _exact_ci(project_name)})
     return JsonResponse({"supply_orders": sorted([o for o in orders if o], key=lambda s: str(s).casefold())})
 
 def wbs_list(request):
@@ -3375,12 +3386,12 @@ def wbs_list(request):
     if err:
         return err
     query = {}
-    project_name = request.GET.get("project_name", "").strip()
-    supply_order_no = request.GET.get("supply_order_no", "").strip()
+    project_name = request.GET.get("project_name", "").strip().upper()
+    supply_order_no = request.GET.get("supply_order_no", "").strip().upper()
     if project_name:
-        query["project_name"] = project_name
+        query["project_name"] = _exact_ci(project_name)
     if supply_order_no:
-        query["supply_order_no"] = supply_order_no
+        query["supply_order_no"] = _exact_ci(supply_order_no)
     docs = list(wbs_details_col.find(query).sort("created_at", -1))
     docs = [_serialize_mongo_doc(_decorate_user_display_names(d)) for d in docs]
     return JsonResponse({"records": docs})
@@ -3446,19 +3457,19 @@ def _field_report_query_from_request(request):
     project = (request.GET.get("project") or request.GET.get("project_name") or "").strip()
     if not project:
         return {}, ""
-    if not admin_projects_collection.find_one({"projectName": project}, {"_id": 1}):
+    if not admin_projects_collection.find_one({"projectName": _exact_ci(project)}, {"_id": 1}):
         return None, project
-    return {"$or": [{"data.PROJECT NAME*": project}, {"data.PROJECT NAME": project}]}, project
+    return {"$or": [{"data.PROJECT NAME*": _exact_ci(project)}, {"data.PROJECT NAME": _exact_ci(project)}]}, project
 
 def _serialize_field_report_doc(doc, headers):
     data = doc.get("data") or {}
-    row = {h: data.get(h, "") for h in headers}
+    row = {h: (data.get(h, "").upper() if isinstance(data.get(h, ""), str) else data.get(h, "")) for h in headers}
     return {
         "_id": str(doc.get("_id")),
         "data": row,
-        "created_by": _display_name_for_username(doc.get("created_by")),
+        "created_by": _display_name_for_username(doc.get("created_by")).upper(),
         "created_at": doc.get("created_at", ""),
-        "updated_by": _display_name_for_username(doc.get("updated_by")),
+        "updated_by": _display_name_for_username(doc.get("updated_by")).upper(),
         "updated_at": doc.get("updated_at", ""),
         "upload_order": doc.get("upload_order"),
     }
@@ -3484,7 +3495,7 @@ def field_reports_bulk_upload(request):
             return JsonResponse({"error": "Header validation failed", "missing": missing, "unexpected": unexpected}, status=400)
         mandatory_norms = {n for n, h in required.items() if "*" in h}
         mandatory_norms.update({_normalize_header(v) for v in ("PROJECT NAME", "BEL ENGINEER NAME", "ACTIVITY START DATE", "ACTIVITY END DATE")})
-        project_names = set(admin_projects_collection.distinct("projectName"))
+        project_names = {str(p).upper() for p in admin_projects_collection.distinct("projectName")}
         errors = []
         normalized_rows = []
         for idx, row in enumerate(rows, start=2):
@@ -3492,11 +3503,11 @@ def field_reports_bulk_upload(request):
             by_norm = {_normalize_header(k): v for k, v in row.items()}
             for norm, master in required.items():
                 value = by_norm.get(norm, "")
-                clean[master] = value
+                clean[master] = value.upper() if isinstance(value, str) else value
                 if norm in mandatory_norms and str(value or "").strip() == "":
                     errors.append(f"Row {idx}: {master.replace('*', '').strip()} is mandatory.")
             project = str(by_norm.get(_normalize_header("PROJECT NAME*")) or by_norm.get(_normalize_header("PROJECT NAME")) or "").strip()
-            if project and project not in project_names:
+            if project and project.upper() not in project_names:
                 errors.append(f'Row {idx}: Project Name "{project}" does not exist in Admin Projects.')
             for field in ("ACTIVITY START DATE", "ACTIVITY END DATE"):
                 norm_star = _normalize_header(field + "*")
@@ -3562,7 +3573,7 @@ def field_reports_download(request):
         writer.writerow(["SL NO.", *headers])
         for idx, doc in enumerate(docs, start=1):
             data = doc.get("data") or {}
-            writer.writerow([idx, *[data.get(h, "") for h in headers]])
+            writer.writerow([idx, *[(data.get(h, "").upper() if isinstance(data.get(h, ""), str) else data.get(h, "")) for h in headers]])
         response = HttpResponse(out.getvalue(), content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="field_complaints_report.csv"'
         return response

@@ -307,6 +307,21 @@ function Dashboard() {
               <div className={styles.cardDesc}>Print stickers, handover form, or acknowledgement.</div>
               <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/print-sticker">OPEN</Link>
             </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>CONFIGURATION MANAGEMENT</div>
+              <div className={styles.cardDesc}>Add, view, and download item configuration details.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/user/config">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>WBS DETAILS</div>
+              <div className={styles.cardDesc}>Create, update, view, and download WBS details.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/wbs">OPEN</Link>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardTitle}>FIELD COMPLAINTS REPORT</div>
+              <div className={styles.cardDesc}>Bulk upload and view field complaints reports.</div>
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} to="/field-complaints-report">OPEN</Link>
+            </div>
           </div>
         </div>
         <Footer />

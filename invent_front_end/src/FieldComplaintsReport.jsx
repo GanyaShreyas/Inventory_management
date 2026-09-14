@@ -6,6 +6,9 @@ import Sidebar from './components/sidebar';
 import Footer from './components/footer';
 import { apiBase, authHeaders } from './apiConfig';
 import { ColumnFilterPopover, FilterIconBtn, useColumnFilters } from './ConfigurationManagement';
+import SectionNav from './components/SectionNav';
+
+const upper = (value) => String(value ?? '').toUpperCase();
 
 function Shell({ children }) {
   return (
@@ -25,6 +28,7 @@ function FieldReportsHome() {
   return (
     <Shell>
       <div className={styles.page}>
+        <SectionNav section="fieldReports" />
         <div className={styles.pageHeader}>
           <div className={styles.pageTitle}>FIELD COMPLAINTS REPORT</div>
           <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/choice')}>BACK</button>
@@ -74,6 +78,7 @@ function BulkUploadPage() {
   return (
     <Shell>
       <div className={styles.page}>
+        <SectionNav section="fieldReports" />
         <div className={styles.pageHeader}>
           <div className={styles.pageTitle}>FIELD COMPLAINTS REPORT - BULK UPLOAD</div>
           <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/field-complaints-report')}>BACK</button>
@@ -127,12 +132,13 @@ function ViewReportPage() {
         setProjects(data.projects || []);
       } catch (e) { console.error(e); }
     })();
-    handleSearch('');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleReset = () => {
     setProjectFilter('');
-    handleSearch('');
+    setRecords([]);
+    setHeaders([]);
+    setSearched(false);
   };
 
   const handleDownload = () => {
@@ -161,6 +167,7 @@ function ViewReportPage() {
   return (
     <Shell>
       <div className={styles.page}>
+        <SectionNav section="fieldReports" />
         <div className={styles.pageHeader}>
           <div className={styles.pageTitle}>FIELD COMPLAINTS REPORT - VIEW</div>
           <button className={`${styles.btn} ${styles.btnGhost}`} onClick={() => navigate('/field-complaints-report')}>BACK</button>
@@ -171,7 +178,7 @@ function ViewReportPage() {
               <label className={styles.label}>PROJECT NAME
                 <select className={styles.control} value={projectFilter} onChange={e => setProjectFilter(e.target.value)}>
                   <option value="">- All Projects -</option>
-                  {projects.map(p => <option key={p} value={p}>{p}</option>)}
+                  {projects.map(p => <option key={p} value={p}>{upper(p)}</option>)}
                 </select>
               </label>
             </div>
@@ -206,7 +213,7 @@ function ViewReportPage() {
                   ) : visibleRows.map((row, idx) => (
                     <tr key={row._id || idx}>
                       <td>{idx + 1}</td>
-                      {viewColumns.map(c => <td key={c.id}>{c.accessor(row) || '-'}</td>)}
+                      {viewColumns.map(c => <td key={c.id}>{upper(c.accessor(row)) || '-'}</td>)}
                     </tr>
                   ))}
                 </tbody>

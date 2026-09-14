@@ -52,6 +52,14 @@ const SECTIONS = {
       { to: '/wbs/view', label: 'VIEW' },
     ],
   },
+  fieldReports: {
+    label: 'FIELD COMPLAINTS REPORT',
+    backTo: '/field-complaints-report',
+    links: [
+      { to: '/field-complaints-report/upload', label: 'BULK UPLOAD' },
+      { to: '/field-complaints-report/view', label: 'VIEW REPORT' },
+    ],
+  },
 };
 
 export default function SectionNav({ section }) {
